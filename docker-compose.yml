@@ -1,0 +1,21 @@
+version: '3'
+
+services:
+  aircloud-vpn:
+    build: .
+    container_name: aircloud-vpn
+    restart: always
+    ports:
+      - "443:443"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/var/log/xray
+      - ./.env:/app/.env
+    environment:
+      - TZ=Europe/Moscow
+    command: >
+      sh -c "
+        python -c \"import asyncio; from xray_api import XrayAPI; asyncio.run(XrayAPI().setup_reality())\" &&
+        service xray start &&
+        python main.py
+      "
