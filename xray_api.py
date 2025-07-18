@@ -17,22 +17,31 @@ class XrayAPI:
     async def restart_xray(self):
         """Перезапуск сервиса Xray"""
         try:
-            # Используем systemctl для перезапуска сервиса
-            result = subprocess.run(["systemctl", "restart", "xray"], 
-                                   check=True, 
-                                   capture_output=True, 
-                                   text=True)
+            # Останавливаем все процессы Xray
+            subprocess.run(["pkill", "-9", "xray"], 
+                          capture_output=True, 
+                          text=True)
             
-            if result.returncode == 0:
+            # Запускаем Xray в фоновом режиме
+            subprocess.Popen(["/usr/local/bin/xray", "-config", self.config_path], 
+                             stdout=subprocess.PIPE, 
+                             stderr=subprocess.PIPE)
+            
+            # Проверяем, запустился ли Xray
+            import time
+            time.sleep(1)  # Даем время на запуск
+            
+            check_result = subprocess.run(["pgrep", "xray"], 
+                                        capture_output=True, 
+                                        text=True)
+            
+            if check_result.returncode == 0:
                 logger.info("Xray успешно перезапущен")
                 return True
             else:
-                logger.error(f"Ошибка при перезапуске Xray: {result.stderr}")
+                logger.error("Ошибка при перезапуске Xray: процесс не запустился")
                 return False
         
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Ошибка при перезапуске Xray: {e.stderr}")
-            return False
         except Exception as e:
             logger.error(f"Ошибка при перезапуске Xray: {str(e)}")
             return False
@@ -110,25 +119,29 @@ class XrayAPI:
     async def get_xray_status(self):
         """Получение статуса сервиса Xray"""
         try:
-            # Используем systemctl для проверки статуса сервиса
-            result = subprocess.run(["systemctl", "is-active", "xray"], 
+            # Проверяем, запущен ли процесс Xray
+            result = subprocess.run(["pgrep", "xray"], 
                                    capture_output=True, 
                                    text=True)
             
-            status = result.stdout.strip()
-            
-            if status == "active":
-                return {"status": "active", "message": "Xray работает"}
-            else:
-                # Получаем дополнительную информацию о статусе
-                status_result = subprocess.run(["systemctl", "status", "xray"], 
-                                             capture_output=True, 
-                                             text=True)
+            if result.returncode == 0:
+                # Получаем PID процесса
+                pid = result.stdout.strip()
+                
+                # Получаем дополнительную информацию о процессе
+                ps_result = subprocess.run(["ps", "-p", pid, "-o", "pid,ppid,cmd,%cpu,%mem,etime"], 
+                                          capture_output=True, 
+                                          text=True)
                 
                 return {
-                    "status": status,
-                    "message": "Xray не работает",
-                    "details": status_result.stdout
+                    "status": "active", 
+                    "message": "Xray работает",
+                    "details": ps_result.stdout
+                }
+            else:
+                return {
+                    "status": "inactive",
+                    "message": "Xray не работает"
                 }
         
         except Exception as e:

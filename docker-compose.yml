@@ -16,6 +16,7 @@ services:
     command: >
       sh -c "
         python -c \"import asyncio; from xray_api import XrayAPI; asyncio.run(XrayAPI().setup_reality())\" &&
-        service xray start &&
+        nohup /usr/local/bin/xray -config /etc/xray/config.json > /var/log/xray/access.log 2> /var/log/xray/error.log &
+        sleep 2 &&
         python main.py
       "

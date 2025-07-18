@@ -17,7 +17,7 @@ class YooKassaPayment:
     """Класс для работы с ЮKassa API"""
     
     @staticmethod
-    async def create_payment(amount, description, user_id):
+    async def create_payment(amount, description, user_id, days=30):
         """Создание платежа через ЮKassa"""
         try:
             idempotence_key = str(uuid.uuid4())
@@ -35,18 +35,20 @@ class YooKassaPayment:
                 "description": description,
                 "metadata": {
                     "user_id": str(user_id),
+                    "days": str(days),
                     "timestamp": datetime.now().isoformat()
                 }
             }, idempotence_key)
             
-            logger.info(f"Создан платеж ЮKassa: {payment.id}, сумма: {amount}, пользователь: {user_id}")
+            logger.info(f"Создан платеж ЮKassa: {payment.id}, сумма: {amount}, пользователь: {user_id}, дней: {days}")
             
             return {
                 "payment_id": payment.id,
                 "payment_url": payment.confirmation.confirmation_url,
                 "amount": amount,
                 "description": description,
-                "status": payment.status
+                "status": payment.status,
+                "days": days
             }
         
         except Exception as e:
