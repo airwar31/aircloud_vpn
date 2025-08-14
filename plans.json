@@ -1,0 +1,22 @@
+{
+  "month": {
+    "name": "1 месяц",
+    "base_price": 99,
+    "duration": 30
+  },
+  "3months": {
+    "name": "3 месяца",
+    "base_price": 249,
+    "duration": 90
+  },
+  "6months": {
+    "name": "6 месяцев",
+    "base_price": 499,
+    "duration": 180
+  },
+  "year": {
+    "name": "12 месяцев",
+    "base_price": 999,
+    "duration": 365
+  }
+}

@@ -1,275 +1,548 @@
+import sqlite3
+import asyncio
+from datetime import datetime, timedelta
+from typing import Dict, Optional, List
 import logging
-import aiosqlite
-from datetime import datetime
-
-from config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
 class Database:
-    """Класс для работы с базой данных"""
+    def __init__(self, db_path: str = "aircloud_vpn.db"):
+        self.db_path = db_path
+        self.init_db()
     
-    def __init__(self):
-        self.db_file = DATABASE_URL
-        self.db = None
-    
-    async def connect(self):
-        """Подключение к базе данных"""
-        if self.db is None:
-            self.db = await aiosqlite.connect(self.db_file)
-            self.db.row_factory = aiosqlite.Row
-        return self.db
-    
-    async def init_db(self):
+    def init_db(self):
         """Инициализация базы данных"""
-        try:
-            db = await self.connect()
-            
-            # Создаем таблицу пользователей
-            await db.execute('''
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row  # Для доступа по именам колонок
+        cursor = conn.cursor()
+        
+        # Таблица пользователей
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY,
-                telegram_id INTEGER UNIQUE,
+                telegram_id INTEGER UNIQUE NOT NULL,
                 username TEXT,
                 first_name TEXT,
                 last_name TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-            ''')
-            
-            # Создаем таблицу подписок
-            await db.execute('''
+        ''')
+        
+        # Таблица подписок
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS subscriptions (
-                id INTEGER PRIMARY KEY,
-                user_id INTEGER,
-                vpn_key TEXT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                plan_id TEXT NOT NULL,
+                devices INTEGER DEFAULT 1,
+                start_date TIMESTAMP NOT NULL,
+                end_date TIMESTAMP NOT NULL,
+                is_active BOOLEAN DEFAULT TRUE,
+                xray_uuid TEXT UNIQUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                expiry_date TIMESTAMP,
-                active BOOLEAN DEFAULT 1,
-                FOREIGN KEY (user_id) REFERENCES users (telegram_id)
+                FOREIGN KEY (user_id) REFERENCES users (id)
             )
-            ''')
-            
-            # Создаем таблицу платежей
-            await db.execute('''
+        ''')
+        
+        # Добавляем колонку devices для существующих таблиц
+        try:
+            cursor.execute('ALTER TABLE subscriptions ADD COLUMN devices INTEGER DEFAULT 1')
+        except sqlite3.OperationalError:
+            pass  # Колонка уже существует
+        
+        # Индекс для уникальности UUID
+        cursor.execute('''
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_xray_uuid 
+            ON subscriptions(xray_uuid) WHERE xray_uuid IS NOT NULL
+        ''')
+        
+        # Таблица активных сессий
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS active_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                xray_uuid TEXT NOT NULL,
+                client_ip TEXT,
+                device_fingerprint TEXT,
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (xray_uuid) REFERENCES subscriptions(xray_uuid)
+            )
+        ''')
+        
+        # Индекс для быстрого поиска сессий
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_sessions_uuid 
+            ON active_sessions(xray_uuid)
+        ''')
+        
+        # Таблица платежей
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS payments (
-                id INTEGER PRIMARY KEY,
-                user_id INTEGER,
-                amount REAL,
-                payment_id TEXT UNIQUE,
-                status TEXT,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount REAL NOT NULL,
+                currency TEXT DEFAULT 'RUB',
+                payment_id TEXT UNIQUE NOT NULL,
+                plan_id TEXT NOT NULL,
+                status TEXT DEFAULT 'pending',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (telegram_id)
+                FOREIGN KEY (user_id) REFERENCES users (id)
             )
-            ''')
-            
-            await db.commit()
-            logger.info("База данных инициализирована")
+        ''')
         
-        except Exception as e:
-            logger.error(f"Ошибка при инициализации базы данных: {str(e)}")
+        conn.commit()
+        conn.close()
     
-    async def create_user(self, telegram_id, username=None, first_name=None, last_name=None):
-        """Создание нового пользователя"""
-        try:
-            db = await self.connect()
-            
-            await db.execute(
-                "INSERT OR IGNORE INTO users (telegram_id, username, first_name, last_name) VALUES (?, ?, ?, ?)",
-                (telegram_id, username, first_name, last_name)
-            )
-            
-            await db.commit()
-            logger.info(f"Создан новый пользователь: {telegram_id}")
-            return True
-        
-        except Exception as e:
-            logger.error(f"Ошибка при создании пользователя: {str(e)}")
-            return False
-    
-    async def get_user(self, telegram_id):
-        """Получение информации о пользователе"""
-        try:
-            db = await self.connect()
-            
-            async with db.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)) as cursor:
-                user = await cursor.fetchone()
-            
-            if user:
-                return dict(user)
-            else:
-                return None
-        
-        except Exception as e:
-            logger.error(f"Ошибка при получении пользователя: {str(e)}")
+    async def create_user(self, telegram_id: int, username: str = None, 
+                         first_name: str = None, last_name: str = None) -> int:
+        """Создание пользователя"""
+        # Проверяем, что это не бот или канал
+        if telegram_id < 0:  # Каналы и группы имеют отрицательные ID
+            logger.warning(f"Попытка создать пользователя с отрицательным ID: {telegram_id}")
             return None
-    
-    async def create_subscription(self, user_id, vpn_key, expiry_date):
-        """Создание новой подписки"""
-        try:
-            db = await self.connect()
-            
-            # Проверяем, существует ли пользователь
-            user = await self.get_user(user_id)
-            if not user:
-                # Создаем пользователя, если он не существует
-                await self.create_user(user_id)
-            
-            # Деактивируем предыдущие подписки пользователя
-            await db.execute(
-                "UPDATE subscriptions SET active = 0 WHERE user_id = ?",
-                (user_id,)
-            )
-            
-            # Создаем новую подписку
-            await db.execute(
-                "INSERT INTO subscriptions (user_id, vpn_key, expiry_date) VALUES (?, ?, ?)",
-                (user_id, vpn_key, expiry_date.isoformat())
-            )
-            
-            await db.commit()
-            logger.info(f"Создана новая подписка для пользователя: {user_id}")
-            return True
         
+        # Проверяем диапазон пользовательских ID (1-9999999999)
+        if telegram_id > 9999999999:
+            logger.warning(f"Подозрительный ID: {telegram_id}")
+            return None
+            
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                INSERT OR IGNORE INTO users (telegram_id, username, first_name, last_name)
+                VALUES (?, ?, ?, ?)
+            ''', (telegram_id, username, first_name, last_name))
+            
+            if cursor.rowcount == 0:
+                # Пользователь уже существует, обновляем данные
+                cursor.execute('''
+                    UPDATE users SET username = ?, first_name = ?, last_name = ?
+                    WHERE telegram_id = ?
+                ''', (username, first_name, last_name, telegram_id))
+                logger.info(f"Обновлены данные пользователя {telegram_id}")
+            
+            conn.commit()
+            
+            # Получаем ID пользователя
+            cursor.execute('SELECT id FROM users WHERE telegram_id = ?', (telegram_id,))
+            user_id = cursor.fetchone()[0]
+            
+            logger.info(f"Создан пользователь {telegram_id} с ID {user_id}")
+            return user_id
+            
         except Exception as e:
-            logger.error(f"Ошибка при создании подписки: {str(e)}")
-            return False
+            logger.error(f"Ошибка создания пользователя: {e}")
+            return None
+        finally:
+            conn.close()
     
-    async def get_user_subscription(self, user_id):
+    async def get_user(self, user_id: int) -> Optional[Dict]:
+        """Получение пользователя по ID"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                return {
+                    'id': row[0],
+                    'telegram_id': row[1],
+                    'username': row[2],
+                    'first_name': row[3],
+                    'last_name': row[4],
+                    'created_at': row[5]
+                }
+            return None
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователя: {e}")
+            return None
+        finally:
+            conn.close()
+    
+    async def create_subscription(self, user_id: int, plan_id: str, 
+                                duration_days: int, devices: int = 1) -> Dict:
+        """Создание подписки"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            start_date = datetime.now()
+            end_date = start_date + timedelta(days=duration_days)
+            
+            cursor.execute('''
+                INSERT INTO subscriptions (user_id, plan_id, devices, start_date, end_date)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (user_id, plan_id, devices, start_date, end_date))
+            
+            subscription_id = cursor.lastrowid
+            conn.commit()
+            
+            return {
+                'id': subscription_id,
+                'user_id': user_id,
+                'plan_id': plan_id,
+                'start_date': start_date,
+                'end_date': end_date,
+                'active': True
+            }
+            
+        except Exception as e:
+            logger.error(f"Ошибка создания подписки: {e}")
+            return None
+        finally:
+            conn.close()
+    
+    async def get_user_subscription(self, telegram_id: int) -> Optional[Dict]:
         """Получение активной подписки пользователя"""
-        try:
-            db = await self.connect()
-            
-            async with db.execute(
-                "SELECT * FROM subscriptions WHERE user_id = ? AND active = 1",
-                (user_id,)
-            ) as cursor:
-                subscription = await cursor.fetchone()
-            
-            if subscription:
-                subscription_dict = dict(subscription)
-                
-                # Преобразуем строку даты в объект datetime
-                expiry_date = datetime.fromisoformat(subscription_dict['expiry_date'])
-                subscription_dict['expiry_date'] = expiry_date
-                
-                # Проверяем, не истекла ли подписка
-                if expiry_date < datetime.now():
-                    subscription_dict['active'] = False
-                    
-                    # Обновляем статус подписки в базе данных
-                    await db.execute(
-                        "UPDATE subscriptions SET active = 0 WHERE id = ?",
-                        (subscription_dict['id'],)
-                    )
-                    await db.commit()
-                
-                return subscription_dict
-            else:
-                return None
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
-        except Exception as e:
-            logger.error(f"Ошибка при получении подписки пользователя: {str(e)}")
+        try:
+            cursor.execute('''
+                SELECT s.* FROM subscriptions s
+                JOIN users u ON s.user_id = u.id
+                WHERE u.telegram_id = ? AND s.is_active = TRUE AND s.end_date > ?
+                ORDER BY s.end_date DESC LIMIT 1
+            ''', (telegram_id, datetime.now()))
+            
+            row = cursor.fetchone()
+            
+            if row:
+                # Безопасное преобразование дат
+                def safe_datetime(date_value):
+                    if isinstance(date_value, datetime):
+                        return date_value
+                    if isinstance(date_value, str):
+                        try:
+                            return datetime.fromisoformat(date_value.replace('Z', '+00:00'))
+                        except:
+                            try:
+                                return datetime.strptime(date_value, '%Y-%m-%d %H:%M:%S')
+                            except:
+                                return datetime.now()
+                    return datetime.now()
+                
+                return {
+                    'id': row[0],
+                    'user_id': row[1],
+                    'plan_id': row[2],
+                    'devices': row[3] if len(row) > 7 else 1,
+                    'start_date': safe_datetime(row[4]),
+                    'expiry_date': safe_datetime(row[5]),
+                    'active': row[6],
+                    'xray_uuid': row[7] if len(row) > 7 else row[6]
+                }
             return None
-    
-    async def extend_subscription(self, user_id, new_expiry_date):
-        """Продление подписки пользователя"""
-        try:
-            db = await self.connect()
             
-            # Получаем текущую активную подписку
-            subscription = await self.get_user_subscription(user_id)
-            
-            if subscription:
-                # Обновляем дату истечения подписки
-                await db.execute(
-                    "UPDATE subscriptions SET expiry_date = ? WHERE id = ?",
-                    (new_expiry_date.isoformat(), subscription['id'])
-                )
-                
-                await db.commit()
-                logger.info(f"Подписка продлена для пользователя: {user_id}")
-                return True
-            else:
-                logger.error(f"Не найдена активная подписка для пользователя: {user_id}")
-                return False
-        
         except Exception as e:
-            logger.error(f"Ошибка при продлении подписки: {str(e)}")
-            return False
+            logger.error(f"Ошибка получения подписки: {e}")
+            return None
+        finally:
+            conn.close()
     
-    async def create_payment(self, user_id, amount, payment_id, status="pending"):
+    async def update_subscription_xray_uuid(self, subscription_id: int, xray_uuid: str):
+        """Обновление UUID Xray для подписки"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                UPDATE subscriptions SET xray_uuid = ? WHERE id = ?
+            ''', (xray_uuid, subscription_id))
+            
+            conn.commit()
+            
+        except Exception as e:
+            logger.error(f"Ошибка обновления UUID: {e}")
+        finally:
+            conn.close()
+    
+    async def create_payment(self, user_id: int, amount: float, 
+                           payment_id: str, plan_id: str) -> int:
         """Создание записи о платеже"""
-        try:
-            db = await self.connect()
-            
-            await db.execute(
-                "INSERT INTO payments (user_id, amount, payment_id, status) VALUES (?, ?, ?, ?)",
-                (user_id, amount, payment_id, status)
-            )
-            
-            await db.commit()
-            logger.info(f"Создан новый платеж для пользователя: {user_id}")
-            return True
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
+        try:
+            cursor.execute('''
+                INSERT INTO payments (user_id, amount, payment_id, plan_id)
+                VALUES (?, ?, ?, ?)
+            ''', (user_id, amount, payment_id, plan_id))
+            
+            payment_record_id = cursor.lastrowid
+            conn.commit()
+            
+            return payment_record_id
+            
         except Exception as e:
-            logger.error(f"Ошибка при создании платежа: {str(e)}")
-            return False
+            logger.error(f"Ошибка создания платежа: {e}")
+            return None
+        finally:
+            conn.close()
     
-    async def update_payment_status(self, payment_id, status):
+    async def update_payment_status(self, payment_id: str, status: str):
         """Обновление статуса платежа"""
-        try:
-            db = await self.connect()
-            
-            await db.execute(
-                "UPDATE payments SET status = ? WHERE payment_id = ?",
-                (status, payment_id)
-            )
-            
-            await db.commit()
-            logger.info(f"Обновлен статус платежа: {payment_id} -> {status}")
-            return True
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
+        try:
+            cursor.execute('''
+                UPDATE payments SET status = ? WHERE payment_id = ?
+            ''', (status, payment_id))
+            
+            conn.commit()
+            
         except Exception as e:
-            logger.error(f"Ошибка при обновлении статуса платежа: {str(e)}")
+            logger.error(f"Ошибка обновления статуса платежа: {e}")
+        finally:
+            conn.close()
+    
+    async def get_stats(self) -> Dict:
+        """Получение статистики"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # Общее количество пользователей
+            cursor.execute('SELECT COUNT(*) FROM users')
+            users_count = cursor.fetchone()[0]
+            
+            # Активные подписки
+            cursor.execute('''
+                SELECT COUNT(*) FROM subscriptions 
+                WHERE is_active = TRUE AND end_date > ?
+            ''', (datetime.now(),))
+            active_subscriptions = cursor.fetchone()[0]
+            
+            # Доход за месяц
+            month_ago = datetime.now() - timedelta(days=30)
+            cursor.execute('''
+                SELECT SUM(amount) FROM payments 
+                WHERE status = 'succeeded' AND created_at > ?
+            ''', (month_ago,))
+            monthly_revenue = cursor.fetchone()[0] or 0
+            
+            return {
+                'users': users_count,
+                'active_subscriptions': active_subscriptions,
+                'monthly_revenue': monthly_revenue
+            }
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения статистики: {e}")
+            return {}
+        finally:
+            conn.close()
+    
+    async def get_user_by_username(self, username: str) -> Optional[Dict]:
+        """Получение пользователя по username"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT * FROM users WHERE username = ?', (username,))
+            row = cursor.fetchone()
+            
+            if row:
+                return {
+                    'id': row[0],
+                    'telegram_id': row[1],
+                    'username': row[2],
+                    'first_name': row[3],
+                    'last_name': row[4],
+                    'created_at': row[5]
+                }
+            return None
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователя: {e}")
+            return None
+        finally:
+            conn.close()
+    
+    async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[Dict]:
+        """Получение пользователя по telegram_id"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT * FROM users WHERE telegram_id = ?', (telegram_id,))
+            row = cursor.fetchone()
+            
+            if row:
+                return {
+                    'id': row[0],
+                    'telegram_id': row[1],
+                    'username': row[2],
+                    'first_name': row[3],
+                    'last_name': row[4],
+                    'created_at': row[5]
+                }
+            return None
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователя: {e}")
+            return None
+        finally:
+            conn.close()
+    
+    async def cancel_user_subscription(self, user_id: int) -> bool:
+        """Отмена подписки пользователя"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                UPDATE subscriptions SET is_active = FALSE 
+                WHERE user_id = ? AND is_active = TRUE
+            ''', (user_id,))
+            
+            conn.commit()
+            return cursor.rowcount > 0
+            
+        except Exception as e:
+            logger.error(f"Ошибка отмены подписки: {e}")
             return False
+        finally:
+            conn.close()
     
-    async def get_payment(self, payment_id):
-        """Получение информации о платеже"""
-        try:
-            db = await self.connect()
-            
-            async with db.execute("SELECT * FROM payments WHERE payment_id = ?", (payment_id,)) as cursor:
-                payment = await cursor.fetchone()
-            
-            if payment:
-                return dict(payment)
-            else:
-                return None
+    async def get_all_users(self) -> List[Dict]:
+        """Получение всех пользователей"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
-        except Exception as e:
-            logger.error(f"Ошибка при получении платежа: {str(e)}")
-            return None
-    
-    async def get_user_by_payment(self, payment_id):
-        """Получение пользователя по ID платежа"""
         try:
-            db = await self.connect()
+            cursor.execute('SELECT * FROM users')
+            rows = cursor.fetchall()
             
-            async with db.execute("SELECT user_id FROM payments WHERE payment_id = ?", (payment_id,)) as cursor:
-                result = await cursor.fetchone()
+            users = []
+            for row in rows:
+                users.append({
+                    'id': row[0],
+                    'telegram_id': row[1],
+                    'username': row[2],
+                    'first_name': row[3],
+                    'last_name': row[4],
+                    'created_at': row[5]
+                })
             
-            if result:
-                return result['user_id']
-            else:
-                return None
-        
+            return users
+            
         except Exception as e:
-            logger.error(f"Ошибка при получении пользователя по ID платежа: {str(e)}")
-            return None
+            logger.error(f"Ошибка получения пользователей: {e}")
+            return []
+        finally:
+            conn.close()
     
-    async def close(self):
-        """Закрытие соединения с базой данных"""
-        if self.db:
-            await self.db.close()
-            self.db = None
+    async def get_detailed_stats(self) -> Dict:
+        """Подробная статистика"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            stats = {}
+            
+            # Общая статистика
+            cursor.execute('SELECT COUNT(*) FROM users')
+            stats['total_users'] = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM subscriptions WHERE is_active = TRUE AND end_date > ?', (datetime.now(),))
+            stats['active_subscriptions'] = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM subscriptions WHERE end_date <= ?', (datetime.now(),))
+            stats['expired_subscriptions'] = cursor.fetchone()[0]
+            
+            # Доходы
+            day_ago = datetime.now() - timedelta(days=1)
+            week_ago = datetime.now() - timedelta(days=7)
+            month_ago = datetime.now() - timedelta(days=30)
+            
+            cursor.execute('SELECT SUM(amount) FROM payments WHERE status = "succeeded" AND created_at > ?', (day_ago,))
+            stats['daily_revenue'] = cursor.fetchone()[0] or 0
+            
+            cursor.execute('SELECT SUM(amount) FROM payments WHERE status = "succeeded" AND created_at > ?', (week_ago,))
+            stats['weekly_revenue'] = cursor.fetchone()[0] or 0
+            
+            cursor.execute('SELECT SUM(amount) FROM payments WHERE status = "succeeded" AND created_at > ?', (month_ago,))
+            stats['monthly_revenue'] = cursor.fetchone()[0] or 0
+            
+            cursor.execute('SELECT SUM(amount) FROM payments WHERE status = "succeeded"')
+            stats['total_revenue'] = cursor.fetchone()[0] or 0
+            
+            # Статистика по планам
+            cursor.execute('SELECT plan_id, COUNT(*) FROM subscriptions GROUP BY plan_id')
+            plan_stats = {}
+            for row in cursor.fetchall():
+                plan_stats[row[0]] = row[1]
+            stats['plan_stats'] = plan_stats
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения детальной статистики: {e}")
+            return {}
+        finally:
+            conn.close()
+    
+    async def get_user_stats(self, telegram_id: int) -> Dict:
+        """Получение статистики пользователя"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # Количество подписок
+            cursor.execute('''
+                SELECT COUNT(*) FROM subscriptions s
+                JOIN users u ON s.user_id = u.id
+                WHERE u.telegram_id = ?
+            ''', (telegram_id,))
+            result = cursor.fetchone()
+            total_subscriptions = result[0] if result else 0
+            
+            # Общая сумма платежей
+            cursor.execute('''
+                SELECT SUM(p.amount) FROM payments p
+                JOIN users u ON p.user_id = u.id
+                WHERE u.telegram_id = ? AND p.status = "succeeded"
+            ''', (telegram_id,))
+            result = cursor.fetchone()
+            total_spent = result[0] if result and result[0] else 0
+            
+            # Дата регистрации
+            cursor.execute('SELECT created_at FROM users WHERE telegram_id = ?', (telegram_id,))
+            result = cursor.fetchone()
+            registration_date = result[0] if result else None
+            
+            return {
+                'total_subscriptions': total_subscriptions,
+                'total_spent': total_spent,
+                'registration_date': registration_date
+            }
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения статистики пользователя: {e}")
+            return {}
+        finally:
+            conn.close()
+    
+    async def is_uuid_exists(self, xray_uuid: str) -> bool:
+        """Проверка существования UUID"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('SELECT COUNT(*) FROM subscriptions WHERE xray_uuid = ?', (xray_uuid,))
+            count = cursor.fetchone()[0]
+            return count > 0
+            
+        except Exception as e:
+            logger.error(f"Ошибка проверки UUID: {e}")
+            return False
+        finally:
+            conn.close()

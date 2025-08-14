@@ -9,14 +9,11 @@ from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiohttp import web
 
-from config import BOT_TOKEN, SUBSCRIPTION_PRICE, ADMIN_IDS, SUBSCRIPTION_PLANS
+from config import BOT_TOKEN, SUBSCRIPTION_PLANS, ADMIN_IDS, YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY
 from database import Database
 from xray_api import XrayAPI
-from payment import YooKassaPayment
-from admin_panel import router as admin_router
+from payments.yookassa_integration import YooKassaPayment
 
 # Настройка логирования
 logging.basicConfig(
@@ -30,33 +27,36 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 router = Router()
 
-# Инициализация базы данных и API Xray
+# Инициализация сервисов
 db = Database()
-xray = XrayAPI()
+xray = XrayAPI()  # Теперь использует Xray-core API
+payment_service = YooKassaPayment(YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY)
 
 # Состояния для FSM
 class UserStates(StatesGroup):
     start = State()
+    select_plan = State()
     payment = State()
-    confirm = State()
+    waiting_payment = State()
     admin_give_subscription = State()
     admin_select_plan = State()
-
-# Словарь с планами подписок импортирован из config.py
 
 # Клавиатуры
 def get_main_keyboard(has_subscription=False):
     """Получение основной клавиатуры"""
     if has_subscription:
         keyboard = [
-            [InlineKeyboardButton(text="Продлить подписку", callback_data="extend")],
-            [InlineKeyboardButton(text="Мой VPN ключ", callback_data="show_key")],
-            [InlineKeyboardButton(text="Инструкция по настройке", callback_data="instructions")]
+            [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile")],
+            [InlineKeyboardButton(text="📱 VPN ключ", callback_data="show_key")],
+            [InlineKeyboardButton(text="⏰ Продлить подписку", callback_data="extend")],
+            [InlineKeyboardButton(text="📖 Инструкция", callback_data="instructions")]
         ]
     else:
         keyboard = [
-            [InlineKeyboardButton(text="Выбрать тариф", callback_data="select_plan")],
-            [InlineKeyboardButton(text="Инструкция по настройке", callback_data="instructions")]
+            [InlineKeyboardButton(text="👤 Мой профиль", callback_data="profile")],
+            [InlineKeyboardButton(text="💳 Купить подписку", callback_data="select_plan")],
+            [InlineKeyboardButton(text="📖 Инструкция", callback_data="instructions")],
+            [InlineKeyboardButton(text="💬 Поддержка", callback_data="support")]
         ]
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -65,45 +65,47 @@ def get_plans_keyboard():
     """Получение клавиатуры с тарифными планами"""
     keyboard = []
     
-    logger.info(f"get_plans_keyboard: Доступные планы: {list(SUBSCRIPTION_PLANS.keys())}")
-    
     for plan_id, plan in SUBSCRIPTION_PLANS.items():
-        logger.info(f"get_plans_keyboard: Добавляю кнопку для плана {plan_id}: {plan['name']}")
+        # Обратная совместимость с старыми планами
+        price = plan.get('base_price', plan.get('price', 0))
+        
         keyboard.append([
             InlineKeyboardButton(
-                text=f"{plan['name']} - {plan['price']} руб.", 
-                callback_data=f"buy_{plan_id}"
+                text=f"{plan['name']} - от {price} ₽", 
+                callback_data=f"select_devices_{plan_id}"
             )
         ])
     
-    keyboard.append([InlineKeyboardButton(text="Назад", callback_data="back_to_main")])
-    
+    keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_main")])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-def get_payment_keyboard(payment_url):
-    """Получение клавиатуры для оплаты"""
-    keyboard = [
-        [InlineKeyboardButton(text="Оплатить", url=payment_url)],
-        [InlineKeyboardButton(text="Я оплатил", callback_data="check_payment")],
-        [InlineKeyboardButton(text="Отмена", callback_data="cancel")]
-    ]
+def get_devices_keyboard(plan_id: str):
+    """Клавиатура выбора количества устройств"""
+    from config import calculate_plan_price, DEVICE_PRICING
     
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
-
-def get_admin_plans_keyboard(user_id):
-    """Получение клавиатуры с тарифными планами для админа"""
     keyboard = []
     
-    for plan_id, plan in SUBSCRIPTION_PLANS.items():
+    for devices in DEVICE_PRICING.keys():
+        price = calculate_plan_price(plan_id, devices)
+        device_text = "📱" if devices == 1 else f"📱x{devices}"
+        
         keyboard.append([
             InlineKeyboardButton(
-                text=f"{plan['name']} - {plan['price']} руб.", 
-                callback_data=f"admin_give_{plan_id}_{user_id}"
+                text=f"{device_text} - {price} ₽",
+                callback_data=f"buy_{plan_id}_{devices}"
             )
         ])
     
-    keyboard.append([InlineKeyboardButton(text="Отмена", callback_data="cancel")])
-    
+    keyboard.append([InlineKeyboardButton(text="◀️ Назад", callback_data="select_plan")])
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def get_payment_keyboard(payment_url, payment_id):
+    """Получение клавиатуры для оплаты"""
+    keyboard = [
+        [InlineKeyboardButton(text="💳 Оплатить", url=payment_url)],
+        [InlineKeyboardButton(text="✅ Проверить оплату", callback_data=f"check_payment_{payment_id}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 # Обработчики команд
@@ -111,579 +113,549 @@ def get_admin_plans_keyboard(user_id):
 async def cmd_start(message: Message, state: FSMContext):
     """Обработчик команды /start"""
     user = message.from_user
-    logger.info(f"Пользователь {user.id} запустил бота")
     
-    # Создаем пользователя в базе данных
+    # Проверяем, что это не бот и не канал
+    if user.is_bot or user.id < 0:
+        logger.warning(f"Отклонен запрос от бота/канала: {user.id}")
+        return
+    
+    logger.info(f"Пользователь {user.id} ({user.first_name}) запустил бота")
+    
     await db.create_user(user.id, user.username, user.first_name, user.last_name)
-    
-    # Проверяем, есть ли у пользователя активная подписка
     subscription = await db.get_user_subscription(user.id)
     
     if subscription and subscription['active']:
-        # Если есть активная подписка, показываем информацию о ней
         expiry_date = subscription['expiry_date']
         days_left = (expiry_date - datetime.now()).days
         
         await message.answer(
-            f"Привет, {user.first_name}! У вас есть активная подписка.\n"
-            f"Срок действия: до {expiry_date.strftime('%d.%m.%Y')}\n"
-            f"Осталось дней: {days_left}",
+            f"🎉 Привет, {user.first_name}!\n\n"
+            f"✅ У вас активная подписка\n"
+            f"📅 До: {expiry_date.strftime('%d.%m.%Y')}\n"
+            f"⏳ Осталось: {days_left} дней",
             reply_markup=get_main_keyboard(has_subscription=True)
         )
     else:
-        # Если нет активной подписки, предлагаем купить
         await message.answer(
-            f"Привет, {user.first_name}! Добро пожаловать в AirCloud VPN.\n"
-            f"Здесь вы можете приобрести доступ к быстрому и безопасному VPN.",
+            f"👋 Привет, {user.first_name}!\n\n"
+            f"🚀 Добро пожаловать в AirCloud VPN\n"
+            f"🔒 Быстрый и безопасный VPN на базе Xray\n\n"
+            f"💡 Выберите действие:",
             reply_markup=get_main_keyboard(has_subscription=False)
         )
     
     await state.set_state(UserStates.start)
 
-@router.message(Command("help"))
-async def cmd_help(message: Message):
-    """Обработчик команды /help"""
-    help_text = (
-        "Доступные команды:\n"
-        "/start - Начать работу с ботом\n"
-        "/help - Показать эту справку\n"
-        "/status - Проверить статус подписки\n"
-        "/support - Связаться с поддержкой"
+# Обработчики callback'ов
+@router.callback_query(F.data == "select_plan")
+async def select_plan_callback(callback: CallbackQuery, state: FSMContext):
+    """Выбор тарифного плана"""
+    if callback.from_user.is_bot:
+        return
+        
+    plans_text = "💳 Выберите тарифный план:\n\n"
+    
+    for plan_id, plan in SUBSCRIPTION_PLANS.items():
+        # Обратная совместимость
+        price = plan.get('base_price', plan.get('price', 0))
+        
+        plans_text += f"📦 {plan['name']}\n"
+        plans_text += f"💰 от {price} ₽\n"
+        plans_text += f"📅 {plan['duration']} дней\n"
+        plans_text += f"🚀 Безлимитный трафик\n\n"
+    
+    await callback.message.edit_text(
+        plans_text,
+        reply_markup=get_plans_keyboard()
+    )
+    await state.set_state(UserStates.select_plan)
+
+@router.callback_query(F.data.startswith("select_devices_"))
+async def select_devices_callback(callback: CallbackQuery, state: FSMContext):
+    """Выбор количества устройств"""
+    if callback.from_user.is_bot:
+        return
+        
+    plan_id = callback.data.split("_")[2]
+    
+    if plan_id not in SUBSCRIPTION_PLANS:
+        await callback.answer("❌ Неверный тариф")
+        return
+    
+    plan = SUBSCRIPTION_PLANS[plan_id]
+    
+    # Обратная совместимость
+    base_price = plan.get('base_price', plan.get('price', 0))
+    
+    devices_text = (
+        f"📦 {plan['name']}\n\n"
+        f"📱 Выберите количество устройств:\n\n"
+        f"💰 Базовая цена: {base_price} ₽\n"
+        f"➕ Доплата за каждое доп. устройство"
     )
     
-    # Добавляем команды для администраторов
-    if message.from_user.id in ADMIN_IDS:
-        help_text += (
-            "\n\nКоманды администратора:\n"
-            "/admin - Открыть административную панель\n"
-            "/give_subscription <user_id> - Выдать подписку пользователю\n"
-            "/users - Список пользователей\n"
-            "/stats - Статистика бота"
-        )
-    
-    await message.answer(help_text)
+    await callback.message.edit_text(
+        devices_text,
+        reply_markup=get_devices_keyboard(plan_id)
+    )
+    await state.set_state(UserStates.select_plan)
 
-@router.message(Command("status"))
-async def cmd_status(message: Message):
-    """Обработчик команды /status"""
-    user_id = message.from_user.id
+@router.callback_query(F.data.startswith("buy_"))
+async def buy_plan_callback(callback: CallbackQuery, state: FSMContext):
+    """Покупка выбранного плана с устройствами"""
+    if callback.from_user.is_bot:
+        return
+        
+    parts = callback.data.split("_")
+    if len(parts) < 3:
+        await callback.answer("❌ Неверные данные")
+        return
+        
+    plan_id = parts[1]
+    devices = int(parts[2])
+    
+    if plan_id not in SUBSCRIPTION_PLANS:
+        await callback.answer("❌ Неверный тариф")
+        return
+    
+    from config import calculate_plan_price
+    plan = SUBSCRIPTION_PLANS[plan_id]
+    price = calculate_plan_price(plan_id, devices)
+    user_id = callback.from_user.id
+    
+    # Создаем платеж
+    payment_result = payment_service.create_payment(
+        amount=price,
+        description=f"Подписка {plan['name']} ({devices} устр.) - AirCloud VPN",
+        user_id=user_id,
+        plan_id=f"{plan_id}_{devices}"
+    )
+    
+    if payment_result['success']:
+        # Сохраняем информацию о платеже
+        await db.create_payment(
+            user_id=user_id,
+            amount=price,
+            payment_id=payment_result['payment_id'],
+            plan_id=f"{plan_id}_{devices}"
+        )
+        
+        await state.update_data(
+            payment_id=payment_result['payment_id'],
+            plan_id=plan_id,
+            devices=devices
+        )
+        
+        device_text = "📱 1 устройство" if devices == 1 else f"📱 {devices} устройств"
+        
+        await callback.message.edit_text(
+            f"💳 Оплата подписки\n\n"
+            f"📦 План: {plan['name']}\n"
+            f"{device_text}\n"
+            f"💰 Сумма: {price} ₽\n"
+            f"📅 Срок: {plan['duration']} дней\n\n"
+            f"👆 Нажмите кнопку для оплаты",
+            reply_markup=get_payment_keyboard(
+                payment_result['payment_url'], 
+                payment_result['payment_id']
+            )
+        )
+        await state.set_state(UserStates.waiting_payment)
+    else:
+        await callback.answer("❌ Ошибка создания платежа")
+
+@router.callback_query(F.data.startswith("check_payment_"))
+async def check_payment_callback(callback: CallbackQuery, state: FSMContext):
+    """Проверка статуса платежа"""
+    payment_id = callback.data.split("_")[2]
+    
+    payment_status = payment_service.check_payment_status(payment_id)
+    
+    if payment_status['success'] and payment_status['paid']:
+        # Платеж успешен, активируем подписку
+        user_id = callback.from_user.id
+        data = await state.get_data()
+        plan_id = data.get('plan_id')
+        
+        if plan_id:
+            plan = SUBSCRIPTION_PLANS[plan_id]
+            
+            # Получаем данные о количестве устройств
+            data = await state.get_data()
+            devices = data.get('devices', 1)
+            
+            # Получаем внутренний user_id по telegram_id
+            internal_user_id = await db.create_user(user_id, callback.from_user.username, 
+                                                   callback.from_user.first_name, callback.from_user.last_name)
+            
+            # Создаем подписку с указанным количеством устройств
+            subscription = await db.create_subscription(
+                user_id=internal_user_id,
+                plan_id=plan_id,
+                duration_days=plan['duration'],
+                devices=devices
+            )
+            
+            # Создаем конфигурацию Xray
+            xray_config = await xray.create_user_config(user_id)
+            if xray_config['success']:
+                await db.update_subscription_xray_uuid(
+                    subscription['id'], 
+                    xray_config['uuid']
+                )
+            
+            # Обновляем статус платежа
+            await db.update_payment_status(payment_id, 'succeeded')
+            
+            device_text = "📱 1 устройство" if devices == 1 else f"📱 {devices} устройств"
+            
+            await callback.message.edit_text(
+                f"✅ Платеж успешно обработан!\n\n"
+                f"🎉 Подписка активирована\n"
+                f"📦 План: {plan['name']}\n"
+                f"{device_text}\n"
+                f"📅 Срок: {plan['duration']} дней\n\n"
+                f"🔑 Получите ваш VPN ключ:",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📱 Получить ключ", callback_data="show_key")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
+                ])
+            )
+            await state.set_state(UserStates.start)
+        else:
+            await callback.answer("❌ Ошибка обработки платежа")
+    else:
+        await callback.answer("⏳ Платеж еще не обработан")
+
+@router.callback_query(F.data == "profile")
+async def profile_callback(callback: CallbackQuery):
+    """Профиль пользователя"""
+    user_id = callback.from_user.id
+    user = callback.from_user
     subscription = await db.get_user_subscription(user_id)
+    user_stats = await db.get_user_stats(user_id)
+    
+    # Основная информация о пользователе
+    reg_date = "Неизвестно"
+    if user_stats and user_stats.get('registration_date'):
+        try:
+            # Пробуем разные форматы даты
+            reg_str = user_stats['registration_date']
+            if isinstance(reg_str, str):
+                # SQLite формат: 2024-01-15 12:30:45
+                if ' ' in reg_str:
+                    reg_datetime = datetime.strptime(reg_str, '%Y-%m-%d %H:%M:%S')
+                else:
+                    reg_datetime = datetime.fromisoformat(reg_str)
+                reg_date = reg_datetime.strftime('%d.%m.%Y')
+        except Exception as e:
+            logger.error(f"Ошибка парсинга даты: {e}")
+            reg_date = "Неизвестно"
+    
+    profile_text = (
+        f"👤 Мой профиль\n\n"
+        f"📝 Имя: {user.first_name or 'Не указано'}\n"
+        f"🆔 Username: @{user.username or 'нет'}\n"
+        f"🆔 ID: `{user_id}`\n"
+        f"📅 Регистрация: {reg_date}\n\n"
+    )
     
     if subscription and subscription['active']:
         expiry_date = subscription['expiry_date']
         days_left = (expiry_date - datetime.now()).days
+        plan_name = SUBSCRIPTION_PLANS.get(subscription['plan_id'], {}).get('name', 'Неизвестно')
         
-        await message.answer(
-            f"Статус вашей подписки: Активна\n"
-            f"Срок действия: до {expiry_date.strftime('%d.%m.%Y')}\n"
-            f"Осталось дней: {days_left}"
-        )
-    else:
-        await message.answer(
-            "У вас нет активной подписки. Используйте /start для покупки."
-        )
-
-@router.message(Command("support"))
-async def cmd_support(message: Message):
-    """Обработчик команды /support"""
-    await message.answer(
-        "Для связи с поддержкой напишите на email: support@aircloud-vpn.com\n"
-        "Или в Telegram: @aircloud_support"
-    )
-
-# Административные команды
-@router.message(Command("give_subscription"))
-async def cmd_give_subscription(message: Message, command: CommandObject, state: FSMContext):
-    """Обработчик команды /give_subscription для администраторов"""
-    # Проверяем, является ли пользователь администратором
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("У вас нет прав для выполнения этой команды.")
-        return
-    
-    # Проверяем, указан ли ID пользователя
-    if not command.args:
-        await message.answer(
-            "Пожалуйста, укажите ID пользователя.\n"
-            "Пример: /give_subscription 123456789"
-        )
-        return
-    
-    try:
-        user_id = int(command.args)
-        
-        # Проверяем, существует ли пользователь
-        user = await db.get_user(user_id)
-        if not user:
-            await message.answer(f"Пользователь с ID {user_id} не найден.")
-            return
-        
-        # Сохраняем ID пользователя в состоянии
-        await state.update_data(target_user_id=user_id)
-        
-        # Показываем клавиатуру с выбором тарифного плана
-        await message.answer(
-            f"Выберите тарифный план для пользователя {user_id}:",
-            reply_markup=get_admin_plans_keyboard(user_id)
-        )
-        
-        await state.set_state(UserStates.admin_select_plan)
-    
-    except ValueError:
-        await message.answer("ID пользователя должен быть числом.")
-
-@router.message(Command("users"))
-async def cmd_users(message: Message):
-    """Обработчик команды /users для администраторов"""
-    # Проверяем, является ли пользователь администратором
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("У вас нет прав для выполнения этой команды.")
-        return
-    
-    # Здесь должна быть реализация получения списка пользователей из базы данных
-    # Для примера просто отправляем заглушку
-    await message.answer(
-        "Функция получения списка пользователей находится в разработке."
-    )
-
-@router.message(Command("stats"))
-async def cmd_stats(message: Message):
-    """Обработчик команды /stats для администраторов"""
-    # Проверяем, является ли пользователь администратором
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("У вас нет прав для выполнения этой команды.")
-        return
-    
-    # Здесь должна быть реализация получения статистики бота
-    # Для примера просто отправляем заглушку
-    await message.answer(
-        "Функция получения статистики находится в разработке."
-    )
-
-# Обработчики кнопок
-@router.callback_query(F.data == "select_plan")
-async def select_plan(callback: CallbackQuery):
-    """Обработчик кнопки выбора тарифного плана"""
-    await callback.answer()
-    
-    # Отладочная информация
-    logger.info(f"select_plan: Доступные планы: {list(SUBSCRIPTION_PLANS.keys())}")
-    
-    await safe_edit_message(
-        callback.message,
-        "Выберите тарифный план:",
-        reply_markup=get_plans_keyboard()
-    )
-
-@router.callback_query(F.data.startswith("buy_"))
-async def buy_plan(callback: CallbackQuery, state: FSMContext):
-    """Обработчик кнопки покупки тарифного плана"""
-    await callback.answer()
-    
-    # Получаем ID тарифного плана из callback_data
-    plan_id = callback.data.split("_")[1]
-    
-    # Отладочная информация
-    logger.info(f"buy_plan: Выбран план {plan_id}")
-    logger.info(f"buy_plan: Доступные планы: {list(SUBSCRIPTION_PLANS.keys())}")
-    
-    # Проверяем, существует ли такой тарифный план
-    if plan_id not in SUBSCRIPTION_PLANS:
-        logger.error(f"buy_plan: План {plan_id} не найден в SUBSCRIPTION_PLANS")
-        await safe_edit_message(
-            callback.message,
-            "Выбран несуществующий тарифный план. Пожалуйста, попробуйте снова.",
-            reply_markup=get_plans_keyboard()
-        )
-        return
-    
-    # Получаем информацию о тарифном плане
-    plan = SUBSCRIPTION_PLANS[plan_id]
-    user_id = callback.from_user.id
-    price = plan["price"]
-    days = plan["days"]
-    
-    logger.info(f"buy_plan: Выбран план {plan_id}: {plan['name']}, {price} руб., {days} дней")
-    
-    # Сохраняем информацию о плане в состоянии
-    await state.update_data(plan_id=plan_id, days=days)
-    
-    # Временно пропускаем создание платежа для тестирования
-    # Создаем фиктивный платеж для тестирования
-    payment_data = {
-        "payment_id": f"test_{user_id}_{plan_id}",
-        "payment_url": "https://example.com/payment",
-        "status": "pending"
-    }
-    
-    # Сохраняем информацию о платеже в базу данных
-    await db.create_payment(user_id, price, payment_data["payment_id"], payment_data["status"])
-    
-    # Сохраняем ID платежа в состоянии
-    await state.update_data(payment_id=payment_data["payment_id"])
-    
-    await safe_edit_message(
-        callback.message,
-        f"Стоимость подписки на {plan['name']}: {price} руб.\n"
-        f"Для оплаты перейдите по ссылке.",
-        reply_markup=get_payment_keyboard(payment_data["payment_url"])
-    )
-    
-    await state.set_state(UserStates.payment)
-
-@router.callback_query(F.data == "check_payment")
-async def check_payment(callback: CallbackQuery, state: FSMContext):
-    """Обработчик кнопки проверки оплаты"""
-    await callback.answer()
-    
-    # Получаем данные из состояния
-    data = await state.get_data()
-    payment_id = data.get("payment_id")
-    plan_id = data.get("plan_id")
-    days = data.get("days", 30)  # По умолчанию 30 дней
-    
-    logger.info(f"check_payment: payment_id={payment_id}, plan_id={plan_id}, days={days}")
-    
-    if not payment_id:
-        await safe_edit_message(
-            callback.message,
-            "Информация о платеже не найдена. Пожалуйста, начните процесс покупки заново."
-        )
-        return
-    
-    # Для тестовых платежей сразу считаем оплату успешной
-    if payment_id.startswith("test_"):
-        payment_data = {"status": "succeeded"}
-        await db.update_payment_status(payment_id, "succeeded")
-    else:
-        # Проверяем статус платежа
-        payment_data = await YooKassaPayment.check_payment(payment_id)
-    
-    if payment_data and payment_data["status"] == "succeeded":
-        # Обновляем статус платежа в базе данных
-        if not payment_id.startswith("test_"):
-            await db.update_payment_status(payment_id, "succeeded")
-        
-        user_id = callback.from_user.id
-        
-        # Для тестирования создаем фиктивный VPN ключ
-        user_data = {"link": f"vless://test-key@example.com:443?security=tls&type=tcp&headerType=none#{user_id}"}
-        
-        if user_data and "link" in user_data:
-            # Сохраняем информацию о подписке в базу данных
-            expiry_date = datetime.now() + timedelta(days=days)
-            await db.create_subscription(user_id, user_data["link"], expiry_date)
-            
-            keyboard = [
-                [InlineKeyboardButton(text="Показать мой ключ", callback_data="show_key")],
-                [InlineKeyboardButton(text="Инструкция по настройке", callback_data="instructions")]
-            ]
-            
-            plan_name = SUBSCRIPTION_PLANS[plan_id]["name"] if plan_id in SUBSCRIPTION_PLANS else f"{days} дней"
-            
-            await safe_edit_message(
-                callback.message,
-                f"Оплата успешно проведена! Ваш VPN ключ создан на {plan_name}.\n"
-                "Вы можете посмотреть его и инструкцию по настройке.",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
-            )
-            
-            await state.set_state(UserStates.start)
+        # Статус подписки
+        if days_left > 7:
+            status_emoji = "✅"
+            status_text = "Активна"
+        elif days_left > 0:
+            status_emoji = "⚠️"
+            status_text = "Скоро истекает"
         else:
-            await safe_edit_message(
-                callback.message,
-                "Произошла ошибка при создании VPN ключа. Пожалуйста, обратитесь в поддержку."
-            )
-    elif payment_data and payment_data["status"] == "pending":
-        await safe_edit_message(
-            callback.message,
-            "Ваш платеж еще обрабатывается. Пожалуйста, подождите немного и проверьте снова.",
-            reply_markup=get_payment_keyboard(callback.message.reply_markup.inline_keyboard[0][0].url)
-        )
-    else:
-        await safe_edit_message(
-            callback.message,
-            "Платеж не найден или был отменен. Пожалуйста, попробуйте снова.",
-            reply_markup=get_main_keyboard(has_subscription=False)
+            status_emoji = "❌"
+            status_text = "Неактивна"
+        
+        profile_text += (
+            f"💳 Подписка:\n"
+            f"{status_emoji} Статус: {status_text}\n"
+            f"📦 План: {plan_name}\n"
+            f"📅 До: {expiry_date.strftime('%d.%m.%Y %H:%M')}\n"
+            f"⏳ Осталось: {days_left} дней\n\n"
         )
         
-        await state.set_state(UserStates.start)
-
-@router.callback_query(F.data == "show_key")
-async def show_key(callback: CallbackQuery):
-    """Обработчик кнопки показа VPN ключа"""
-    await callback.answer()
-    
-    user_id = callback.from_user.id
-    subscription = await db.get_user_subscription(user_id)
-    
-    logger.info(f"show_key: user_id={user_id}, subscription={subscription}")
-    
-    if subscription and subscription['active']:
+        # VPN ключ
+        if subscription['xray_uuid']:
+            config = await xray.get_user_config(subscription['xray_uuid'])
+            if config['success']:
+                # Показываем сокращенный ключ
+                short_key = config['config'][:50] + "..." if len(config['config']) > 50 else config['config']
+                profile_text += f"🔑 VPN ключ:\n`{short_key}`\n\n"
+        
+        # Статистика использования
+        profile_text += (
+            f"📈 Статистика:\n"
+            f"📁 Трафик: Неограничен\n"
+            f"🌍 Сервер: Онлайн\n"
+            f"🔒 Шифрование: AES-256\n\n"
+            f"📊 Общая статистика:\n"
+            f"📦 Подписок: {user_stats.get('total_subscriptions', 0) if user_stats else 0}\n"
+            f"💰 Потрачено: {user_stats.get('total_spent', 0) if user_stats else 0} ₽"
+        )
+        
         keyboard = [
-            [InlineKeyboardButton(text="Назад", callback_data="back_to_main")]
+            [InlineKeyboardButton(text="📱 Полный ключ", callback_data="show_key")],
+            [InlineKeyboardButton(text="⏰ Продлить", callback_data="extend")],
+            [InlineKeyboardButton(text="📖 Инструкция", callback_data="instructions")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
         ]
-        
-        await safe_edit_message(
-            callback.message,
-            f"Ваш VPN ключ:\n\n`{subscription['vpn_key']}`\n\n"
-            f"Срок действия: до {subscription['expiry_date'].strftime('%d.%m.%Y')}",
-            parse_mode="Markdown",
-            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
-        )
     else:
-        await safe_edit_message(
-            callback.message,
-            "У вас нет активной подписки. Используйте /start для покупки."
+        profile_text += (
+            f"❌ Подписка: Неактивна\n\n"
+            f"📊 Общая статистика:\n"
+            f"📦 Подписок: {user_stats.get('total_subscriptions', 0) if user_stats else 0}\n"
+            f"💰 Потрачено: {user_stats.get('total_spent', 0) if user_stats else 0} ₽\n\n"
+            f"💳 Купите подписку для получения доступа к VPN"
         )
-
-@router.callback_query(F.data == "instructions")
-async def instructions(callback: CallbackQuery):
-    """Обработчик кнопки инструкции по настройке"""
-    await callback.answer()
+        
+        keyboard = [
+            [InlineKeyboardButton(text="💳 Купить подписку", callback_data="select_plan")],
+            [InlineKeyboardButton(text="📖 Инструкция", callback_data="instructions")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
+        ]
     
-    # Инструкция по настройке VPN
-    instructions_text = (
-        "Инструкция по настройке VPN:\n\n"
-        "1. Скачайте приложение V2rayNG для Android или Shadowrocket для iOS\n"
-        "2. Откройте приложение и нажмите на кнопку добавления конфигурации\n"
-        "3. Выберите 'Импорт из буфера обмена' и вставьте ваш VPN ключ\n"
-        "4. Сохраните конфигурацию и подключитесь к VPN\n\n"
-        "Подробная инструкция с картинками: https://aircloud-vpn.com/instructions"
-    )
-    
-    keyboard = [[InlineKeyboardButton(text="Назад", callback_data="back_to_main")]]
-    
-    await safe_edit_message(
-        callback.message,
-        instructions_text,
+    await callback.message.edit_text(
+        profile_text,
+        parse_mode="Markdown",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
 
-@router.callback_query(F.data == "back_to_main")
-async def back_to_main(callback: CallbackQuery, state: FSMContext):
-    """Обработчик кнопки возврата в главное меню"""
-    await callback.answer()
-    
-    # Проверяем, есть ли у пользователя активная подписка
+@router.callback_query(F.data == "show_key")
+async def show_key_callback(callback: CallbackQuery):
+    """Показать VPN ключ пользователя"""
     user_id = callback.from_user.id
     subscription = await db.get_user_subscription(user_id)
     
-    logger.info(f"back_to_main: user_id={user_id}, subscription={subscription}")
+    if not subscription or not subscription['active']:
+        await callback.answer("❌ У вас нет активной подписки")
+        return
+    
+    if subscription['xray_uuid']:
+        config = await xray.get_user_config(subscription['xray_uuid'])
+        
+        if config['success']:
+            await callback.message.edit_text(
+                f"🔑 Ваш VPN ключ:\n\n"
+                f"```\n{config['config']}\n```\n\n"
+                f"📱 Скопируйте ключ и добавьте в приложение\n"
+                f"📖 Инструкция по настройке: /instructions",
+                parse_mode="Markdown",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="📖 Инструкция", callback_data="instructions")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
+                ])
+            )
+        else:
+            await callback.answer("❌ Ошибка получения конфигурации")
+    else:
+        await callback.answer("❌ Конфигурация не найдена")
+
+@router.callback_query(F.data == "status")
+async def status_callback(callback: CallbackQuery):
+    """Показать статус подписки"""
+    user_id = callback.from_user.id
+    subscription = await db.get_user_subscription(user_id)
     
     if subscription and subscription['active']:
-        # Если есть активная подписка, показываем информацию о ней
         expiry_date = subscription['expiry_date']
         days_left = (expiry_date - datetime.now()).days
         
-        await safe_edit_message(
-            callback.message,
-            f"У вас есть активная подписка.\n"
-            f"Срок действия: до {expiry_date.strftime('%d.%m.%Y')}\n"
-            f"Осталось дней: {days_left}",
+        await callback.message.edit_text(
+            f"📊 Статус подписки:\n\n"
+            f"✅ Активна\n"
+            f"📅 До: {expiry_date.strftime('%d.%m.%Y')}\n"
+            f"⏳ Осталось: {days_left} дней\n"
+            f"📦 План: {subscription.get('plan_id', 'Неизвестно')}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="⏰ Продлить", callback_data="extend")],
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
+            ])
+        )
+    else:
+        await callback.message.edit_text(
+            f"❌ У вас нет активной подписки\n\n"
+            f"💡 Выберите тарифный план:",
+            reply_markup=get_plans_keyboard()
+        )
+
+@router.callback_query(F.data == "extend")
+async def extend_callback(callback: CallbackQuery, state: FSMContext):
+    """Продление подписки"""
+    await select_plan_callback(callback, state)
+
+@router.callback_query(F.data == "instructions")
+async def instructions_callback(callback: CallbackQuery):
+    """Инструкция по настройке"""
+    instructions_text = (
+        "📖 Инструкция по настройке VPN:\n\n"
+        "📱 Android:\n"
+        "1. Скачайте v2rayNG из Google Play\n"
+        "2. Нажмите + и выберите 'Импорт из буфера'\n"
+        "3. Вставьте ваш ключ\n\n"
+        "🍎 iOS:\n"
+        "1. Скачайте Shadowrocket из App Store\n"
+        "2. Нажмите + в правом верхнем углу\n"
+        "3. Выберите 'Paste' и вставьте ключ\n\n"
+        "💻 Windows:\n"
+        "1. Скачайте v2rayN с GitHub\n"
+        "2. Добавьте сервер через буфер обмена\n\n"
+        "🖥 macOS:\n"
+        "1. Скачайте V2rayU из App Store\n"
+        "2. Импортируйте конфигурацию"
+    )
+    
+    await callback.message.edit_text(
+        instructions_text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
+        ])
+    )
+
+@router.callback_query(F.data == "support")
+async def support_callback(callback: CallbackQuery):
+    """Поддержка"""
+    await callback.message.edit_text(
+        f"💬 Поддержка AirCloud VPN\n\n"
+        f"📧 Email: support@aircloud-vpn.com\n"
+        f"💬 Telegram: @aircloud_support\n\n"
+        f"⏰ Время работы: 24/7\n"
+        f"⚡ Среднее время ответа: 15 минут",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
+        ])
+    )
+
+@router.callback_query(F.data == "back_to_main")
+async def back_to_main_callback(callback: CallbackQuery, state: FSMContext):
+    """Возврат в главное меню"""
+    if callback.from_user.is_bot:
+        return
+        
+    user = callback.from_user
+    subscription = await db.get_user_subscription(user.id)
+    
+    if subscription and subscription['active']:
+        expiry_date = subscription['expiry_date']
+        days_left = (expiry_date - datetime.now()).days
+        
+        await callback.message.edit_text(
+            f"🎉 Привет, {user.first_name}! У вас есть активная подписка.\n"
+            f"📅 Срок действия: до {expiry_date.strftime('%d.%m.%Y')}\n"
+            f"⏳ Осталось дней: {days_left}",
             reply_markup=get_main_keyboard(has_subscription=True)
         )
     else:
-        # Если нет активной подписки, предлагаем купить
-        await safe_edit_message(
-            callback.message,
-            f"Добро пожаловать в AirCloud VPN.\n"
-            f"Здесь вы можете приобрести доступ к быстрому и безопасному VPN.",
+        await callback.message.edit_text(
+            f"👋 Привет, {user.first_name}!\n\n"
+            f"🚀 Добро пожаловать в AirCloud VPN\n"
+            f"🔒 Быстрый и безопасный VPN на базе Xray\n\n"
+            f"💡 Выберите действие:",
             reply_markup=get_main_keyboard(has_subscription=False)
         )
     
     await state.set_state(UserStates.start)
 
 @router.callback_query(F.data == "cancel")
-async def cancel(callback: CallbackQuery, state: FSMContext):
-    """Обработчик кнопки отмены"""
-    await callback.answer()
+async def cancel_callback(callback: CallbackQuery, state: FSMContext):
+    """Отмена операции"""
+    await back_to_main_callback(callback, state)
+
+@router.callback_query(F.data.startswith("admin_"))
+async def admin_callback_handler(callback: CallbackQuery):
+    """Обработчик для необработанных админ callback'ов"""
+    # Перенаправляем на админ панель
+    pass
+
+@router.callback_query()
+async def unknown_callback_handler(callback: CallbackQuery, state: FSMContext):
+    """Обработчик для неизвестных callback'ов"""
+    await callback.answer("❌ Неизвестная команда")
+    await back_to_main_callback(callback, state)
+
+# Административные команды
+@router.message(Command("admin"))
+async def cmd_admin(message: Message):
+    """Административная панель"""
+    if message.from_user.id not in ADMIN_IDS:
+        await message.answer("❌ Нет доступа")
+        return
     
-    await safe_edit_message(
-        callback.message,
-        "Операция отменена. Используйте /start для возврата в главное меню."
+    stats = await db.get_stats()
+    
+    admin_text = (
+        f"👑 Административная панель\n\n"
+        f"👥 Пользователей: {stats.get('users', 0)}\n"
+        f"✅ Активных подписок: {stats.get('active_subscriptions', 0)}\n"
+        f"💰 Доход за месяц: {stats.get('monthly_revenue', 0)} ₽\n\n"
+        f"Команды:\n"
+        f"/give_subscription <user_id> - Выдать подписку\n"
+        f"/users - Список пользователей\n"
+        f"/stats - Подробная статистика"
     )
     
-    await state.clear()
+    await message.answer(admin_text)
 
-@router.callback_query(F.data == "extend")
-async def extend(callback: CallbackQuery):
-    """Обработчик кнопки продления подписки"""
-    await callback.answer()
-    
-    await safe_edit_message(
-        callback.message,
-        "Выберите тарифный план для продления:",
-        reply_markup=get_plans_keyboard()
-    )
+# Middleware для фильтрации ботов
+from aiogram import BaseMiddleware
+from aiogram.types import TelegramObject
+from typing import Callable, Dict, Any, Awaitable
 
-@router.callback_query(F.data.startswith("admin_give_"))
-async def admin_give_subscription(callback: CallbackQuery, state: FSMContext):
-    """Обработчик кнопки выдачи подписки администратором"""
-    await callback.answer()
-    
-    # Проверяем, является ли пользователь администратором
-    if callback.from_user.id not in ADMIN_IDS:
-        await callback.message.edit_text("У вас нет прав для выполнения этой операции.")
-        return
-    
-    # Получаем данные из callback_data
-    parts = callback.data.split("_")
-    if len(parts) < 4:
-        await callback.message.edit_text("Неверный формат данных.")
-        return
-    
-    plan_id = parts[2]
-    try:
-        user_id = int(parts[3])
-    except ValueError:
-        await callback.message.edit_text("Неверный ID пользователя.")
-        return
-    
-    # Проверяем, существует ли такой тарифный план
-    if plan_id not in SUBSCRIPTION_PLANS:
-        await callback.message.edit_text("Выбран несуществующий тарифный план.")
-        return
-    
-    # Получаем информацию о тарифном плане
-    plan = SUBSCRIPTION_PLANS[plan_id]
-    days = plan["days"]
-    
-    # Создаем VPN ключ через Xray API
-    user_data = await xray.create_user(email=f"tg_{user_id}")
-    
-    if user_data and "link" in user_data:
-        # Сохраняем информацию о подписке в базу данных
-        expiry_date = datetime.now() + timedelta(days=days)
-        await db.create_subscription(user_id, user_data["link"], expiry_date)
+class BotFilterMiddleware(BaseMiddleware):
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
+        data: Dict[str, Any]
+    ) -> Any:
+        # Пропускаем сообщения от ботов и каналов
+        if hasattr(event, 'from_user') and event.from_user:
+            # Пропускаем ботов
+            if event.from_user.is_bot:
+                return
+            # Пропускаем каналы (отрицательные ID)
+            if event.from_user.id < 0:
+                return
         
-        # Отправляем уведомление пользователю
-        try:
-            await bot.send_message(
-                user_id,
-                f"Вам выдана подписка на {plan['name']}!\n"
-                f"Срок действия: до {expiry_date.strftime('%d.%m.%Y')}\n"
-                "Используйте команду /start для просмотра ключа и инструкции по настройке."
-            )
-        except Exception as e:
-            logger.error(f"Ошибка при отправке уведомления пользователю {user_id}: {str(e)}")
-        
-        await callback.message.edit_text(
-            f"Подписка на {plan['name']} успешно выдана пользователю {user_id}.\n"
-            f"Срок действия: до {expiry_date.strftime('%d.%m.%Y')}"
-        )
-    else:
-        await callback.message.edit_text(
-            f"Произошла ошибка при создании VPN ключа для пользователя {user_id}."
-        )
+        # Пропускаем сообщения из каналов
+        if hasattr(event, 'chat') and event.chat and event.chat.id < 0:
+            return
+            
+        return await handler(event, data)
 
-# Обработчик для вебхуков от ЮKassa
-async def yookassa_webhook_handler(request):
-    """Обработчик вебхуков от ЮKassa"""
-    try:
-        # Получаем данные запроса
-        request_body = await request.json()
-        
-        # Обрабатываем уведомление
-        notification = YooKassaPayment.process_webhook(request_body)
-        
-        if notification and notification["status"] == "succeeded":
-            # Получаем ID пользователя из метаданных платежа
-            user_id = int(notification["metadata"].get("user_id"))
-            
-            # Обновляем статус платежа в базе данных
-            await db.update_payment_status(notification["payment_id"], "succeeded")
-            
-            # Проверяем, есть ли у пользователя активная подписка
-            subscription = await db.get_user_subscription(user_id)
-            
-            if subscription:
-                # Если есть активная подписка, продлеваем ее
-                # Получаем количество дней из метаданных платежа или используем 30 дней по умолчанию
-                days = int(notification["metadata"].get("days", 30))
-                new_expiry = subscription['expiry_date'] + timedelta(days=days)
-                await db.extend_subscription(user_id, new_expiry)
-                
-                # Отправляем уведомление пользователю
-                await bot.send_message(
-                    user_id,
-                    f"Ваша подписка успешно продлена до {new_expiry.strftime('%d.%m.%Y')}!"
-                )
-            else:
-                # Если нет активной подписки, создаем новую
-                # Получаем количество дней из метаданных платежа или используем 30 дней по умолчанию
-                days = int(notification["metadata"].get("days", 30))
-                user_data = await xray.create_user(email=f"tg_{user_id}")
-                
-                if user_data and "link" in user_data:
-                    # Сохраняем информацию о подписке в базу данных
-                    expiry_date = datetime.now() + timedelta(days=days)
-                    await db.create_subscription(user_id, user_data["link"], expiry_date)
-                    
-                    # Отправляем уведомление пользователю
-                    await bot.send_message(
-                        user_id,
-                        "Оплата успешно проведена! Ваш VPN ключ создан.\n"
-                        "Используйте команду /start для просмотра ключа и инструкции по настройке."
-                    )
-        
-        return web.Response(status=200, text="OK")
-    
-    except Exception as e:
-        logger.error(f"Ошибка при обработке вебхука от ЮKassa: {str(e)}")
-        return web.Response(status=500, text="Error")
+# Подключаем middleware
+dp.message.middleware(BotFilterMiddleware())
+dp.callback_query.middleware(BotFilterMiddleware())
 
 # Регистрация роутеров
 dp.include_router(router)
-dp.include_router(admin_router)
 
-# Запуск бота
+# Подключаем админ панель
+import admin_panel
+dp.include_router(admin_panel.router)
+
 async def main():
-    # Инициализация базы данных
-    await db.init_db()
+    """Запуск бота"""
+    logger.info("Запуск бота...")
     
-    # Запуск бота в режиме long polling
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-# Запуск бота в режиме webhook
-async def main_webhook():
-    # Инициализация базы данных
-    await db.init_db()
+    # Запускаем мониторинг устройств в фоновом режиме
+    from device_monitor import device_monitor
+    monitoring_task = asyncio.create_task(device_monitor.start_monitoring())
     
-    # Создаем приложение aiohttp
-    app = web.Application()
-    
-    # Настраиваем вебхук для бота
-    webhook_path = f"/webhook/{BOT_TOKEN}"
-    await bot.set_webhook(url=f"https://your-domain.com{webhook_path}")
-    
-    # Настраиваем обработчики запросов
-    SimpleRequestHandler(
-        dispatcher=dp,
-        bot=bot,
-    ).register(app, path=webhook_path)
-    
-    # Добавляем обработчик вебхуков от ЮKassa
-    app.router.add_post("/yookassa-webhook", yookassa_webhook_handler)
-    
-    # Запускаем приложение
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "localhost", 8080)
-    await site.start()
-    
-    # Ждем завершения
     try:
-        await asyncio.Future()
+        await dp.start_polling(bot)
     finally:
-        await runner.cleanup()
+        device_monitor.stop_monitoring()
+        monitoring_task.cancel()
 
 if __name__ == "__main__":
-    try:
-        # Используйте main() для long polling или main_webhook() для webhook
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Бот остановлен")
-    finally:
-        # Закрываем соединения
-        asyncio.run(db.close())
+    asyncio.run(main())

@@ -1,22 +1,20 @@
-version: '3'
+version: '3.8'
 
 services:
-  aircloud-vpn:
+  aircloud-bot:
     build: .
-    container_name: aircloud-vpn
-    restart: always
+    container_name: aircloud-vpn-bot
+    restart: unless-stopped
     ports:
-      - "443:443"
+      - "8000:8000"
     volumes:
       - ./data:/app/data
-      - ./logs:/var/log/xray
-      - ./.env:/app/.env
     environment:
-      - TZ=Europe/Moscow
-    command: >
-      sh -c "
-        python -c \"import asyncio; from xray_api import XrayAPI; asyncio.run(XrayAPI().setup_reality())\" &&
-        nohup /usr/local/bin/xray -config /etc/xray/config.json > /var/log/xray/access.log 2> /var/log/xray/error.log &
-        sleep 2 &&
-        python main.py
-      "
+      - BOT_TOKEN=7717019733:AAE8ElbxXYUTeoLct8s185m8aMA6lwx_mns
+      - ADMIN_IDS=1262543088
+      - YOOKASSA_SHOP_ID=1127420
+      - YOOKASSA_SECRET_KEY=test_5ed7HCB8W7xTWQm4WjSjrSi_gNjI5lvh42-j-1Ts5Zc
+      - XRAY_SERVER_IP=127.0.0.1
+      - XRAY_SERVER_PORT=443
+      - DATABASE_PATH=/app/data/aircloud_vpn.db
+    network_mode: host

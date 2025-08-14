@@ -1,43 +1,66 @@
 import os
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения из .env файла
 load_dotenv()
 
-# Telegram Bot API токен (получите у @BotFather)
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+# Telegram Bot
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7717019733:AAE8ElbxXYUTeoLct8s185m8aMA6lwx_mns")
+ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "1262543088").split(",") if x.strip()]
 
-# Настройки ЮKassa
-YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "")
-YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "")
-YOOKASSA_RETURN_URL = os.getenv("YOOKASSA_RETURN_URL", "")
+# Database
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///aircloud_vpn.db")
 
-# Настройки VPN
-VPN_SERVER_ADDRESS = os.getenv("VPN_SERVER_ADDRESS", "")
-VPN_DEFAULT_PROTOCOL = os.getenv("VPN_DEFAULT_PROTOCOL", "vless")
+# ЮKassa
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "1127420")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "test_5ed7HCB8W7xTWQm4WjSjrSi_gNjI5lvh42-j-1Ts5Zc")
 
-# Настройки Xray
-XRAY_CONFIG_PATH = os.getenv("XRAY_CONFIG_PATH", "/etc/xray/config.json")
-XRAY_TEMPLATE_PATH = os.getenv("XRAY_TEMPLATE_PATH", "/etc/xray/config.template.json")
+# 3X-UI API
+XRAY_API_URL = os.getenv("XRAY_API_URL", "http://5.129.224.166:19620/44sA6Evz35TcCx1/panel/api")
+XRAY_API_KEY = os.getenv("XRAY_API_KEY", "")
+XRAY_API_USERNAME = os.getenv("XRAY_API_USERNAME", "GrokZNwkIU")
+XRAY_API_PASSWORD = os.getenv("XRAY_API_PASSWORD", "NGN2u1f1NX")
+XRAY_SERVER_IP = os.getenv("XRAY_SERVER_IP", "5.129.224.166")
+XRAY_SERVER_PORT = os.getenv("XRAY_SERVER_PORT", "443")
 
-# Настройки базы данных
-DATABASE_URL = os.getenv("DATABASE_URL", "aircloud_vpn.db")
-
-# Цены на подписки (в рублях)
-SUBSCRIPTION_PRICE = {
-    "1_month": 150,
-    "3_months": 250,
-    "6_months": 449,
-    "12_months": 899
-}
-
-# Словарь с планами подписок
+# Тарифные планы
 SUBSCRIPTION_PLANS = {
-    "1_month": {"name": "1 месяц", "days": 30, "price": SUBSCRIPTION_PRICE["1_month"]},
-    "3_months": {"name": "3 месяца", "days": 90, "price": SUBSCRIPTION_PRICE["3_months"]},
-    "6_months": {"name": "6 месяцев", "days": 180, "price": SUBSCRIPTION_PRICE["6_months"]},
-    "12_months": {"name": "12 месяцев", "days": 365, "price": SUBSCRIPTION_PRICE["12_months"]}
+    "month": {
+        "name": "1 месяц",
+        "base_price": 99,
+        "duration": 30
+    },
+    "3months": {
+        "name": "3 месяца",
+        "base_price": 249,
+        "duration": 90
+    },
+    "6months": {
+        "name": "6 месяцев",
+        "base_price": 499,
+        "duration": 180
+    },
+    "year": {
+        "name": "12 месяцев",
+        "base_price": 999,
+        "duration": 365
+    }
 }
 
-# Настройки администратора
-ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(","))) if os.getenv("ADMIN_IDS") else []
+# Цены за дополнительные устройства
+DEVICE_PRICING = {
+    1: 0,    # 1 устройство - базовая цена
+    2: 50,   # +50₽ за 2-е устройство
+    3: 100,  # +100₽ за 3-е устройство
+    4: 150,  # +150₽ за 4-е устройство
+    5: 200   # +200₽ за 5-е устройство
+}
+
+def calculate_plan_price(plan_id: str, devices: int) -> int:
+    """Расчет цены плана с учетом количества устройств"""
+    if plan_id not in SUBSCRIPTION_PLANS or devices not in DEVICE_PRICING:
+        return 0
+    
+    base_price = SUBSCRIPTION_PLANS[plan_id]["base_price"]
+    device_surcharge = DEVICE_PRICING[devices]
+    
+    return base_price + device_surcharge
