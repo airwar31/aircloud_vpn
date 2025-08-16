@@ -1,7 +1,6 @@
 # Конфиденциальные данные
 .env
 .env.*
-config.json
 *.key
 *.pem
 
