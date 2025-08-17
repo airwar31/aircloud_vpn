@@ -301,9 +301,9 @@ class XrayAPI:
             return {}
     
     def _generate_reality_config(self, user_uuid: str, user_id: int) -> str:
-        """Генерация VLESS Reality конфигурации с вашими реальными параметрами"""
-        reality_public_key = "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU"
-        # Используем пустой Short ID как в конфиге Xray
+        """Генерация VLESS Reality конфигурации с актуальными параметрами"""
+        # Получаем актуальный публичный ключ из конфига
+        reality_public_key = self.get_public_key_from_config()
         short_id = ""
         
         return (
@@ -528,8 +528,13 @@ class XrayAPI:
     async def get_unique_uuid_from_pool(self, user_id: int) -> str:
         """Получение уникального UUID из пула"""
         try:
+            # Создаем пул UUID если его нет
+            uuid_file = '/app/data/uuid_pool.txt'
+            if not os.path.exists(uuid_file):
+                self.create_uuid_pool()
+            
             # Читаем пул UUID
-            with open('/app/data/uuid_pool.txt', 'r') as f:
+            with open(uuid_file, 'r') as f:
                 uuids = [line.strip() for line in f.readlines() if line.strip()]
             
             # Выбираем UUID по остатку от деления
@@ -543,6 +548,45 @@ class XrayAPI:
             logger.error(f"Ошибка получения UUID: {e}")
             # Возвращаем сгенерированный UUID
             return self._generate_secure_uuid(user_id)
+    
+    def create_uuid_pool(self):
+        """Создание пула UUID"""
+        try:
+            import uuid
+            uuids = [str(uuid.uuid4()) for _ in range(5)]
+            
+            with open('/app/data/uuid_pool.txt', 'w') as f:
+                for uuid_str in uuids:
+                    f.write(uuid_str + '\n')
+            
+            logger.info(f"Создан пул из {len(uuids)} UUID")
+            
+        except Exception as e:
+            logger.error(f"Ошибка создания пула UUID: {e}")
+    
+    def get_public_key_from_config(self) -> str:
+        """Получение публичного ключа"""
+        try:
+            # Создаем файл с ключом если его нет
+            key_file = '/app/data/public_key.txt'
+            if not os.path.exists(key_file):
+                # Используем стандартный ключ
+                default_key = "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU"
+                with open(key_file, 'w') as f:
+                    f.write(default_key)
+                logger.info(f"Создан файл с ключом: {default_key}")
+                return default_key
+            
+            # Читаем файл с публичным ключом
+            with open(key_file, 'r') as f:
+                public_key = f.read().strip()
+                logger.info(f"Используем публичный ключ: {public_key}")
+                return public_key
+                
+        except Exception as e:
+            logger.error(f"Ошибка чтения ключа: {e}")
+            # Возвращаем стандартный ключ
+            return "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU"
     
     async def reset_user_traffic(self, user_uuid: str) -> Dict:
         """Сброс статистики трафика пользователя"""

@@ -212,8 +212,13 @@ echo "🤖 Обновляем конфигурацию бота..."
 sed -i "s/4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU/$PUBLIC_KEY/g" xray_api.py
 sed -i "s/127.0.0.1/$SERVER_IP/g" docker-compose.yml
 
-# Копируем пул UUID для бота
+# Копируем данные для бота
 cp uuid_pool.txt data/
+echo "$PUBLIC_KEY" > data/public_key.txt
+
+echo "🔑 Сохранено для бота:"
+echo "- UUID пул: $(wc -l < uuid_pool.txt) пользователей"
+echo "- Public Key: $PUBLIC_KEY"
 
 # Запускаем Xray
 echo "🚀 Запускаем Xray..."
@@ -223,14 +228,6 @@ systemctl restart xray
 # Создаем папки для бота
 mkdir -p data
 
-# Устанавливаем Flask для HTTP сервиса
-echo "📦 Устанавливаем Flask..."
-pip3 install flask
-
-# Запускаем HTTP сервис для управления пользователями
-echo "🌐 Запускаем HTTP сервис..."
-nohup python3 user_manager.py > user_manager.log 2>&1 &
-
 # Запускаем бота
 echo "🤖 Запускаем бота..."
 docker-compose up -d --build aircloud-bot
@@ -239,5 +236,65 @@ echo ""
 echo "✅ Установка завершена!"
 echo "🌍 VPN сервер: $SERVER_IP:443"
 echo "🔑 Public Key: $PUBLIC_KEY"
+
+# Ждем запуска бота и синхронизируем UUID
+echo "🔄 Ожидание запуска бота..."
+sleep 15
+
+echo "🔄 Синхронизация UUID с Xray..."
+if [ -f "data/uuid_pool.txt" ]; then
+    # Читаем UUID из пула
+    UUID1=$(sed -n '1p' data/uuid_pool.txt 2>/dev/null || echo "")
+    UUID2=$(sed -n '2p' data/uuid_pool.txt 2>/dev/null || echo "")
+    UUID3=$(sed -n '3p' data/uuid_pool.txt 2>/dev/null || echo "")
+    UUID4=$(sed -n '4p' data/uuid_pool.txt 2>/dev/null || echo "")
+    UUID5=$(sed -n '5p' data/uuid_pool.txt 2>/dev/null || echo "")
+    
+    if [ ! -z "$UUID1" ]; then
+        echo "🔑 Обновление конфига Xray..."
+        
+        # Обновляем конфиг Xray
+        python3 -c "
+import json
+
+config_path = '/usr/local/etc/xray/config.json'
+
+try:
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    
+    # Находим vless-in inbound и обновляем клиентов
+    for inbound in config['inbounds']:
+        if inbound.get('tag') == 'vless-in':
+            inbound['settings']['clients'] = [
+                {'id': '$UUID1', 'email': 'user1@aircloud.vpn', 'flow': 'xtls-rprx-vision'},
+                {'id': '$UUID2', 'email': 'user2@aircloud.vpn', 'flow': 'xtls-rprx-vision'},
+                {'id': '$UUID3', 'email': 'user3@aircloud.vpn', 'flow': 'xtls-rprx-vision'},
+                {'id': '$UUID4', 'email': 'user4@aircloud.vpn', 'flow': 'xtls-rprx-vision'},
+                {'id': '$UUID5', 'email': 'user5@aircloud.vpn', 'flow': 'xtls-rprx-vision'}
+            ]
+            break
+    
+    # Сохраняем обновленный конфиг
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=2)
+    
+    print('✅ Конфигурация обновлена')
+    
+except Exception as e:
+    print(f'❌ Ошибка: {e}')
+"
+        
+        # Перезапускаем Xray
+        systemctl restart xray
+        echo "✅ UUID синхронизированы!"
+    else
+        echo "⚠️  UUID пул пуст, повторите через минуту"
+    fi
+else
+    echo "⚠️  Файл UUID пула не найден, повторите через минуту"
+fi
+
+echo ""
 echo "📋 Проверка Xray: systemctl status xray"
 echo "📋 Проверка бота: docker-compose logs -f aircloud-bot"
