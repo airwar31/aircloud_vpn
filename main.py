@@ -66,7 +66,7 @@ def get_plans_keyboard():
     keyboard = []
     
     for plan_id, plan in SUBSCRIPTION_PLANS.items():
-        # Обратная совместимость с старыми планами
+        # Обратная совместимость с старыми планами - используем base_price если price отсутствует
         price = plan.get('base_price', plan.get('price', 0))
         
         keyboard.append([
@@ -126,7 +126,7 @@ async def cmd_start(message: Message, state: FSMContext):
     
     if subscription and subscription['active']:
         expiry_date = subscription['expiry_date']
-        days_left = (expiry_date - datetime.now()).days
+        days_left = max(0, (expiry_date - datetime.now()).days)
         
         await message.answer(
             f"🎉 Привет, {user.first_name}!\n\n"
@@ -280,8 +280,7 @@ async def check_payment_callback(callback: CallbackQuery, state: FSMContext):
         if plan_id:
             plan = SUBSCRIPTION_PLANS[plan_id]
             
-            # Получаем данные о количестве устройств
-            data = await state.get_data()
+            # Используем уже полученные данные
             devices = data.get('devices', 1)
             
             # Получаем внутренний user_id по telegram_id
@@ -332,8 +331,16 @@ async def profile_callback(callback: CallbackQuery):
     """Профиль пользователя"""
     user_id = callback.from_user.id
     user = callback.from_user
-    subscription = await db.get_user_subscription(user_id)
-    user_stats = await db.get_user_stats(user_id)
+    
+    try:
+        subscription, user_stats = await asyncio.gather(
+            db.get_user_subscription(user_id),
+            db.get_user_stats(user_id)
+        )
+    except Exception as e:
+        logger.error(f"Database error: {e}")
+        await callback.answer("❌ Ошибка сервера")
+        return
     
     # Основная информация о пользователе
     reg_date = "Неизвестно"
@@ -344,7 +351,7 @@ async def profile_callback(callback: CallbackQuery):
             if isinstance(reg_str, str):
                 # SQLite формат: 2024-01-15 12:30:45
                 if ' ' in reg_str:
-                    reg_datetime = datetime.strptime(reg_str, '%Y-%m-%d %H:%M:%S')
+                    reg_datetime = datetime.fromisoformat(reg_str.replace(' ', 'T'))
                 else:
                     reg_datetime = datetime.fromisoformat(reg_str)
                 reg_date = reg_datetime.strftime('%d.%m.%Y')
@@ -362,7 +369,7 @@ async def profile_callback(callback: CallbackQuery):
     
     if subscription and subscription['active']:
         expiry_date = subscription['expiry_date']
-        days_left = (expiry_date - datetime.now()).days
+        days_left = max(0, (expiry_date - datetime.now()).days)
         plan_name = SUBSCRIPTION_PLANS.get(subscription['plan_id'], {}).get('name', 'Неизвестно')
         
         # Статус подписки
@@ -386,11 +393,15 @@ async def profile_callback(callback: CallbackQuery):
         
         # VPN ключ
         if subscription['xray_uuid']:
-            config = await xray.get_user_config(subscription['xray_uuid'])
-            if config['success']:
-                # Показываем сокращенный ключ
-                short_key = config['config'][:50] + "..." if len(config['config']) > 50 else config['config']
-                profile_text += f"🔑 VPN ключ:\n`{short_key}`\n\n"
+            try:
+                config = await xray.get_user_config(subscription['xray_uuid'])
+                if config['success']:
+                    # Показываем сокращенный ключ
+                    short_key = config['config'][:50] + "..." if len(config['config']) > 50 else config['config']
+                    profile_text += f"🔑 VPN ключ:\n`{short_key}`\n\n"
+            except Exception as e:
+                logger.error(f"Xray API error: {e}")
+                config = {'success': False}
         
         # Статистика использования
         profile_text += (
@@ -441,22 +452,27 @@ async def show_key_callback(callback: CallbackQuery):
         return
     
     if subscription['xray_uuid']:
-        config = await xray.get_user_config(subscription['xray_uuid'])
-        
-        if config['success']:
-            await callback.message.edit_text(
-                f"🔑 Ваш VPN ключ:\n\n"
-                f"```\n{config['config']}\n```\n\n"
-                f"📱 Скопируйте ключ и добавьте в приложение\n"
-                f"📖 Инструкция по настройке: /instructions",
-                parse_mode="Markdown",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="📖 Инструкция", callback_data="instructions")],
-                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
-                ])
-            )
-        else:
+        try:
+            config = await xray.get_user_config(subscription['xray_uuid'])
+            
+            if config['success']:
+                await callback.message.edit_text(
+                    f"🔑 Ваш VPN ключ:\n\n"
+                    f"```\n{config['config']}\n```\n\n"
+                    f"📱 Скопируйте ключ и добавьте в приложение\n"
+                    f"📖 Инструкция по настройке: /instructions",
+                    parse_mode="Markdown",
+                    reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="📖 Инструкция", callback_data="instructions")],
+                        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_main")]
+                    ])
+                )
+            else:
+                await callback.answer("❌ Ошибка получения конфигурации")
+        except Exception as e:
+            logger.error(f"Xray API error: {e}")
             await callback.answer("❌ Ошибка получения конфигурации")
+            return
     else:
         await callback.answer("❌ Конфигурация не найдена")
 
@@ -468,7 +484,7 @@ async def status_callback(callback: CallbackQuery):
     
     if subscription and subscription['active']:
         expiry_date = subscription['expiry_date']
-        days_left = (expiry_date - datetime.now()).days
+        days_left = max(0, (expiry_date - datetime.now()).days)
         
         await callback.message.edit_text(
             f"📊 Статус подписки:\n\n"
@@ -491,7 +507,11 @@ async def status_callback(callback: CallbackQuery):
 @router.callback_query(F.data == "extend")
 async def extend_callback(callback: CallbackQuery, state: FSMContext):
     """Продление подписки"""
-    await select_plan_callback(callback, state)
+    try:
+        await select_plan_callback(callback, state)
+    except Exception as e:
+        logger.error(f"Error in extend callback: {e}")
+        await callback.answer("❌ Ошибка сервера")
 
 @router.callback_query(F.data == "instructions")
 async def instructions_callback(callback: CallbackQuery):
@@ -546,7 +566,7 @@ async def back_to_main_callback(callback: CallbackQuery, state: FSMContext):
     
     if subscription and subscription['active']:
         expiry_date = subscription['expiry_date']
-        days_left = (expiry_date - datetime.now()).days
+        days_left = max(0, (expiry_date - datetime.now()).days)
         
         await callback.message.edit_text(
             f"🎉 Привет, {user.first_name}! У вас есть активная подписка.\n"
@@ -656,6 +676,10 @@ async def main():
     finally:
         device_monitor.stop_monitoring()
         monitoring_task.cancel()
+        try:
+            await monitoring_task
+        except asyncio.CancelledError:
+            pass
 
 if __name__ == "__main__":
     asyncio.run(main())

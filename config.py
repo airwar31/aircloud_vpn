@@ -4,23 +4,31 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Telegram Bot
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7717019733:AAE8ElbxXYUTeoLct8s185m8aMA6lwx_mns")
-ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "1262543088").split(",") if x.strip()]
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable is required")
+
+ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
 
 # Database
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///aircloud_vpn.db")
 
 # ЮKassa
-YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "1127420")
-YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "test_5ed7HCB8W7xTWQm4WjSjrSi_gNjI5lvh42-j-1Ts5Zc")
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
+if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
+    raise ValueError("YooKassa credentials are required")
 
 # 3X-UI API
-XRAY_API_URL = os.getenv("XRAY_API_URL", "http://5.129.224.166:19620/44sA6Evz35TcCx1/panel/api")
+XRAY_API_URL = os.getenv("XRAY_API_URL")
 XRAY_API_KEY = os.getenv("XRAY_API_KEY", "")
-XRAY_API_USERNAME = os.getenv("XRAY_API_USERNAME", "GrokZNwkIU")
-XRAY_API_PASSWORD = os.getenv("XRAY_API_PASSWORD", "NGN2u1f1NX")
-XRAY_SERVER_IP = os.getenv("XRAY_SERVER_IP", "5.129.224.166")
+XRAY_API_USERNAME = os.getenv("XRAY_API_USERNAME")
+XRAY_API_PASSWORD = os.getenv("XRAY_API_PASSWORD")
+XRAY_SERVER_IP = os.getenv("XRAY_SERVER_IP")
 XRAY_SERVER_PORT = os.getenv("XRAY_SERVER_PORT", "443")
+
+if not all([XRAY_API_URL, XRAY_API_USERNAME, XRAY_API_PASSWORD, XRAY_SERVER_IP]):
+    raise ValueError("X-UI API credentials are required")
 
 # Тарифные планы
 SUBSCRIPTION_PLANS = {

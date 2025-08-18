@@ -1,20 +1,29 @@
-import requests
-import json
-import uuid
-import base64
+from requests import Session, post
+from json import loads, dumps
+from uuid import uuid4
+from base64 import b64encode
 import os
 from typing import Dict
-import logging
+from logging import getLogger
+from html import escape
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
+
+def sanitize_log_input(value):
+    """Санитизация входных данных для логирования"""
+    if isinstance(value, str):
+        return escape(value.replace('\n', '\\n').replace('\r', '\\r'))
+    return str(value)
 
 class XrayAPI:
     def __init__(self):
-        self.server_ip = os.getenv('XRAY_SERVER_IP', '5.129.224.166')
-        self.server_port = os.getenv('XRAY_SERVER_PORT', '8443')
-        self.xray_api_url = "http://127.0.0.1:10085"  # Xray API на локальном сервере
+        from config import XRAY_SERVER_IP, XRAY_SERVER_PORT, XRAY_API_URL
+        self.server_ip = XRAY_SERVER_IP
+        self.server_port = XRAY_SERVER_PORT
+        self.xray_api_url = "http://127.0.0.1:10085"
+        self.panel_api_url = XRAY_API_URL.replace('http://', 'https://')
         self.inbound_tag = os.getenv('XRAY_INBOUND_TAG', 'vless-in')
-        self.session = requests.Session()
+        self.session = Session()
         self.headers = {
             'Content-Type': 'application/json'
         }
@@ -22,56 +31,36 @@ class XrayAPI:
     async def login_3xui(self) -> bool:
         """Авторизация в 3X-UI"""
         try:
-            base_url = "http://5.129.224.166:19620/44sA6Evz35TcCx1/panel"
+            from config import XRAY_API_USERNAME, XRAY_API_PASSWORD
+            base_url = self.panel_api_url.replace('/api', '')
             
-            # Сначала получаем страницу входа для cookies
-            self.session.get(f"{base_url}/login", timeout=10)
+            with self.session.get(f"{base_url}/login", timeout=10) as response:
+                pass
             
-            # Теперь отправляем данные авторизации
             login_data = {
-                'username': self.username,
-                'password': self.password
+                'username': XRAY_API_USERNAME,
+                'password': XRAY_API_PASSWORD
             }
             
-            response = self.session.post(f"{base_url}/login", data=login_data, timeout=10)
-            
-            # Проверяем успешность по содержимому ответа
-            if response.status_code == 200:
-                # Если в ответе есть форма входа - авторизация неудачна
-                if 'username' in response.text and 'password' in response.text:
-                    logger.error("Неудачная авторизация - остались на странице входа")
-                    return False
-                else:
-                    logger.info("Успешная авторизация в 3X-UI")
-                    return True
-            elif response.status_code == 302:
-                logger.info("Успешная авторизация в 3X-UI (перенаправление)")
-                return True
-            else:
+            with self.session.post(f"{base_url}/login", data=login_data, timeout=10) as response:
+                if response.status_code in [200, 302]:
+                    if 'username' not in response.text or 'password' not in response.text:
+                        logger.info("Успешная авторизация в 3X-UI")
+                        return True
+                
                 logger.error(f"Ошибка авторизации: {response.status_code}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Ошибка подключения к 3X-UI: {e}")
+            logger.error(f"Ошибка подключения к 3X-UI: {sanitize_log_input(e)}")
             return False
     
     async def create_user_config(self, user_id: int) -> Dict:
         """Создание пользователя через Xray-core API"""
         try:
-            # Генерируем уникальный UUID
-            from database import Database
-            db = Database()
-            
-            for attempt in range(10):
-                user_uuid = self._generate_secure_uuid(user_id, attempt)
-                if not await db.is_uuid_exists(user_uuid):
-                    break
-            else:
-                raise Exception("Не удалось сгенерировать UUID")
-            
             # Получаем уникальный UUID из пула
             user_uuid = await self.get_unique_uuid_from_pool(user_id)
-            logger.info(f"Пользователь {user_id} получил UUID: {user_uuid}")
+            logger.info(f"Пользователь {sanitize_log_input(user_id)} получил UUID: {sanitize_log_input(user_uuid)}")
             
             # Генерируем конфигурацию
             config = self._generate_reality_config(user_uuid, user_id)
@@ -84,7 +73,7 @@ class XrayAPI:
             }
             
         except Exception as e:
-            logger.error(f"Ошибка создания конфигурации: {e}")
+            logger.error(f"Ошибка создания конфигурации: {sanitize_log_input(e)}")
             return {'success': False, 'error': str(e)}
     
     async def get_user_config(self, user_uuid: str) -> Dict:
@@ -116,55 +105,45 @@ class XrayAPI:
     async def get_inbounds(self) -> list:
         """Получение списка inboundов"""
         try:
-            api_url = "http://5.129.224.166:19620/44sA6Evz35TcCx1/panel/api"
-            
-            # Добавляем нужные заголовки
             headers = {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
                 'X-Requested-With': 'XMLHttpRequest'
             }
             
-            response = self.session.get(
-                f"{api_url}/inbounds", 
+            with self.session.get(
+                f"{self.panel_api_url}/inbounds", 
                 headers=headers,
                 timeout=10
-            )
+            ) as response:
             
-            logger.info(f"Inbounds API Status: {response.status_code}")
-            logger.info(f"Response headers: {dict(response.headers)}")
-            
-            if response.status_code == 200:
-                response_text = response.text.strip()
-                logger.info(f"Response length: {len(response_text)}")
-                logger.info(f"Response preview: {response_text[:200]}")
+                logger.info(f"Inbounds API Status: {response.status_code}")
                 
-                if response_text and not response_text.startswith('<'):
-                    try:
-                        data = response.json()
-                        logger.info(f"JSON structure: {list(data.keys()) if isinstance(data, dict) else type(data)}")
-                        
-                        if isinstance(data, dict):
-                            inbounds = data.get('obj', [])
-                            logger.info(f"Found {len(inbounds)} inbounds")
-                            return inbounds
-                        return []
-                        
-                    except json.JSONDecodeError as e:
-                        logger.error(f"JSON decode error: {e}")
+                if response.status_code == 200:
+                    response_text = response.text.strip()
+                    logger.info(f"Response length: {len(response_text)}")
+                    
+                    if response_text and not response_text.startswith('<'):
+                        try:
+                            data = response.json()
+                            if isinstance(data, dict):
+                                inbounds = data.get('obj', [])
+                                logger.info(f"Found {len(inbounds)} inbounds")
+                                return inbounds
+                            return []
+                            
+                        except ValueError as e:
+                            logger.error(f"JSON decode error: {sanitize_log_input(e)}")
+                            return []
+                    else:
+                        logger.error("Пустой ответ от API" if not response_text else "Получен HTML вместо JSON")
                         return []
                 else:
-                    if len(response_text) == 0:
-                        logger.error("Пустой ответ от API - возможно нет inbound'ов")
-                    else:
-                        logger.error("Получен HTML вместо JSON")
+                    logger.error(f"API error: {response.status_code}")
                     return []
-            else:
-                logger.error(f"API error: {response.status_code}")
-                return []
                 
         except Exception as e:
-            logger.error(f"Ошибка получения inboundов: {e}")
+            logger.error(f"Ошибка получения inboundов: {sanitize_log_input(e)}")
             return []
     
     async def add_client_to_inbound(self, inbound_id: int, uuid: str, email: str) -> bool:
@@ -186,9 +165,8 @@ class XrayAPI:
                 })
             }
             
-            api_url = "http://5.129.224.166:19620/44sA6Evz35TcCx1/panel/api"
             response = self.session.post(
-                f"{api_url}/inbound/addClient",
+                f"{self.panel_api_url}/inbound/addClient",
                 data=client_data,
                 timeout=10
             )
@@ -221,8 +199,8 @@ class XrayAPI:
                 params.update({
                     'pbk': reality_settings.get('publicKey', ''),
                     'fp': reality_settings.get('fingerprint', 'chrome'),
-                    'sni': reality_settings.get('serverNames', ['www.google.com'])[0],
-                    'sid': reality_settings.get('shortIds', [''])[0],
+                    'sni': (reality_settings.get('serverNames') or ['www.google.com'])[0],
+                    'sid': (reality_settings.get('shortIds') or [''])[0],
                     'flow': 'xtls-rprx-vision'
                 })
             
@@ -261,8 +239,6 @@ class XrayAPI:
     async def get_inbound_by_id(self, inbound_id: int) -> dict:
         """Получение конкретного inbound по ID"""
         try:
-            api_url = "http://5.129.224.166:19620/44sA6Evz35TcCx1/panel/api"
-            
             headers = {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
@@ -270,7 +246,7 @@ class XrayAPI:
             }
             
             response = self.session.get(
-                f"{api_url}/inbound/get/{inbound_id}",
+                f"{self.panel_api_url}/inbound/get/{inbound_id}",
                 headers=headers,
                 timeout=10
             )
@@ -407,7 +383,7 @@ class XrayAPI:
     async def test_panel_access(self) -> bool:
         """Тест доступа к панели"""
         try:
-            base_url = "http://5.129.224.166:19620/44sA6Evz35TcCx1/panel"
+            base_url = self.panel_api_url.replace('/api', '')
             response = self.session.get(base_url, timeout=5)
             
             logger.info(f"Panel access test: {response.status_code}")
@@ -529,7 +505,7 @@ class XrayAPI:
         """Получение уникального UUID из пула"""
         try:
             # Создаем пул UUID если его нет
-            uuid_file = '/app/data/uuid_pool.txt'
+            uuid_file = os.path.join(os.getenv('DATA_PATH', 'data'), 'uuid_pool.txt')
             if not os.path.exists(uuid_file):
                 self.create_uuid_pool()
             
@@ -555,7 +531,8 @@ class XrayAPI:
             import uuid
             uuids = [str(uuid.uuid4()) for _ in range(5)]
             
-            with open('/app/data/uuid_pool.txt', 'w') as f:
+            uuid_file = os.path.join(os.getenv('DATA_PATH', 'data'), 'uuid_pool.txt')
+            with open(uuid_file, 'w') as f:
                 for uuid_str in uuids:
                     f.write(uuid_str + '\n')
             
@@ -568,7 +545,7 @@ class XrayAPI:
         """Получение публичного ключа"""
         try:
             # Создаем файл с ключом если его нет
-            key_file = '/app/data/public_key.txt'
+            key_file = os.path.join(os.getenv('DATA_PATH', 'data'), 'public_key.txt')
             if not os.path.exists(key_file):
                 # Используем стандартный ключ
                 default_key = "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU"
