@@ -546,3 +546,53 @@ class Database:
             return False
         finally:
             conn.close()
+    
+    async def get_user_uuid(self, telegram_id: int) -> Optional[str]:
+        """Получение UUID пользователя"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT s.xray_uuid FROM subscriptions s
+                JOIN users u ON s.user_id = u.id
+                WHERE u.telegram_id = ? AND s.xray_uuid IS NOT NULL
+                ORDER BY s.created_at DESC LIMIT 1
+            ''', (telegram_id,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+            
+        except Exception as e:
+            logger.error(f"Ошибка получения UUID: {e}")
+            return None
+        finally:
+            conn.close()
+    
+    async def save_user_uuid(self, telegram_id: int, xray_uuid: str) -> bool:
+        """Сохранение UUID пользователя"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        try:
+            # Сохраняем в отдельной таблице для быстрого поиска
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_uuids (
+                    telegram_id INTEGER PRIMARY KEY,
+                    xray_uuid TEXT UNIQUE NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            cursor.execute('''
+                INSERT OR REPLACE INTO user_uuids (telegram_id, xray_uuid)
+                VALUES (?, ?)
+            ''', (telegram_id, xray_uuid))
+            
+            conn.commit()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Ошибка сохранения UUID: {e}")
+            return False
+        finally:
+            conn.close()

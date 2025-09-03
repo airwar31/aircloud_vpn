@@ -17,16 +17,14 @@ def sanitize_log_input(value):
 
 class XrayAPI:
     def __init__(self):
-        from config import XRAY_SERVER_IP, XRAY_SERVER_PORT, XRAY_API_URL
+        from config import XRAY_SERVER_IP, XRAY_SERVER_PORT
         self.server_ip = XRAY_SERVER_IP
         self.server_port = XRAY_SERVER_PORT
-        self.xray_api_url = "http://127.0.0.1:10085"
-        self.panel_api_url = XRAY_API_URL.replace('http://', 'https://')
+        self.xray_api_url = "http://127.0.0.1:10085"  # Прямое API Xray-core
         self.inbound_tag = os.getenv('XRAY_INBOUND_TAG', 'vless-in')
-        self.session = Session()
-        self.headers = {
-            'Content-Type': 'application/json'
-        }
+        self.session = Session()  # Инициализируем сессию
+        self.panel_api_url = f"http://{self.server_ip}:{self.server_port}/api"  # Для совместимости
+        # X-UI панель не нужна - работаем напрямую с Xray
     
     async def login_3xui(self) -> bool:
         """Авторизация в 3X-UI"""
@@ -58,9 +56,13 @@ class XrayAPI:
     async def create_user_config(self, user_id: int) -> Dict:
         """Создание пользователя через Xray-core API"""
         try:
-            # Получаем уникальный UUID из пула
+            # Получаем уникальный UUID
             user_uuid = await self.get_unique_uuid_from_pool(user_id)
             logger.info(f"Пользователь {sanitize_log_input(user_id)} получил UUID: {sanitize_log_input(user_uuid)}")
+            
+            # Добавляем пользователя в Xray
+            email = f"user{user_id}@aircloud.vpn"
+            await self.add_user_to_xray(user_uuid, email)
             
             # Генерируем конфигурацию
             config = self._generate_reality_config(user_uuid, user_id)
@@ -280,54 +282,137 @@ class XrayAPI:
         """Генерация VLESS Reality конфигурации с актуальными параметрами"""
         # Получаем актуальный публичный ключ из конфига
         reality_public_key = self.get_public_key_from_config()
-        short_id = ""
         
         return (
             f"vless://{user_uuid}@{self.server_ip}:443"
             f"?type=tcp&security=reality&pbk={reality_public_key}"
-            f"&fp=chrome&sni=google.com&sid={short_id}"
+            f"&fp=chrome&sni=www.microsoft.com&sid="
             f"&flow=xtls-rprx-vision#AirCloud-{user_id}"
         )
     
     async def add_user_to_xray(self, user_uuid: str, email: str) -> bool:
-        """Добавление пользователя через Xray-core API"""
+        """Добавление пользователя через Xray API"""
         try:
-            # Xray-core API обычно на порту 10085
-            xray_api_url = f"http://{self.server_ip}:10085"
+            # Пробуем через xray команду
+            import subprocess
             
-            # Полезная нагрузка для добавления пользователя
-            payload = {
-                "inboundTag": "vless-in",
-                "user": {
-                    "id": user_uuid,
-                    "email": email,
-                    "flow": "xtls-rprx-vision"
+            # Создаем JSON для пользователя
+            user_json = {
+                "id": user_uuid,
+                "email": email,
+                "flow": "xtls-rprx-vision"
+            }
+            
+            # Пробуем добавить через Xray API (без перезагрузки)
+            try:
+                import requests
+                api_payload = {
+                    "inboundTag": self.inbound_tag,
+                    "user": {
+                        "id": user_uuid,
+                        "email": email,
+                        "flow": "xtls-rprx-vision"
+                    }
                 }
-            }
+                
+                response = requests.post(
+                    "http://127.0.0.1:10085/HandlerService/AddUser",
+                    json=api_payload,
+                    timeout=3
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"✅ Пользователь {sanitize_log_input(email)} добавлен через API (без перезагрузки)")
+                    return True
+                else:
+                    logger.warning(f"⚠️ API ошибка: {response.status_code}, используем конфиг")
+            except Exception as api_e:
+                logger.warning(f"⚠️ API недоступен: {sanitize_log_input(api_e)}, используем конфиг")
             
-            headers = {
-                'Content-Type': 'application/json'
-            }
-            
-            # Отправляем запрос на добавление
-            response = self.session.post(
-                f"{self.xray_api_url}/HandlerService/AddUser",
-                json=payload,
-                headers=self.headers,
-                timeout=10
-            )
-            
-            logger.info(f"Xray API response: {response.status_code}")
-            
-            if response.status_code == 200:
-                logger.info(f"Пользователь {email} добавлен в Xray")
-                return True
-            else:
-                logger.info(f"Xray API недоступен, используем статическую конфигурацию")
-                return False
+            # Если API не работает - добавляем напрямую
+            return self._add_user_directly_to_config(user_uuid, email)
                 
         except Exception as e:
-            logger.error(f"Ошибка добавления в Xray: {e}")
+            logger.error(f"❌ Ошибка добавления в Xray: {sanitize_log_input(e)}")
+            return False
+    
+    def _add_user_directly_to_config(self, user_uuid: str, email: str) -> bool:
+        """Добавление пользователя напрямую в конфиг"""
+        import json
+        import subprocess
+        
+        # Пробуем разные пути к конфигу
+        possible_paths = [
+            "/usr/local/etc/xray/config.json",
+            "/etc/xray/config.json",
+            "/opt/xray/config.json"
+        ]
+        
+        config_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                config_path = path
+                break
+        
+        if not config_path:
+            logger.error("❌ Конфиг Xray не найден")
+            return False
+        
+        try:
+            # Читаем конфиг
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Ищем inbound vless-in
+            for inbound in config['inbounds']:
+                if inbound.get('tag') == 'vless-in':
+                    clients = inbound['settings']['clients']
+                    
+                    # Проверяем, нет ли уже такого пользователя
+                    for client in clients:
+                        if client.get('id') == user_uuid:
+                            logger.info(f"✅ Пользователь {sanitize_log_input(email)} уже существует")
+                            return True
+                    
+                    # Добавляем нового пользователя
+                    new_client = {
+                        'id': user_uuid,
+                        'email': email,
+                        'flow': 'xtls-rprx-vision'
+                    }
+                    clients.append(new_client)
+                    
+                    # Обновляем Reality настройки для совместимости
+                    for inb in config['inbounds']:
+                        if inb.get('tag') == 'vless-in':
+                            reality = inb.get('streamSettings', {}).get('realitySettings', {})
+                            if 'dest' in reality:
+                                reality['dest'] = 'www.microsoft.com:443'
+                            if 'serverNames' in reality:
+                                reality['serverNames'] = ['www.microsoft.com']
+                    
+                    # Сохраняем конфиг
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=2)
+                    
+                    # Перезагружаем Xray через HTTP запрос к хосту
+                    try:
+                        import requests
+                        response = requests.post('http://127.0.0.1:9998/reload_xray', timeout=3)
+                        if response.status_code == 200:
+                            logger.info(f"✅ Пользователь {sanitize_log_input(email)} добавлен и Xray перезагружен")
+                        else:
+                            logger.warning(f"⚠️ Пользователь добавлен, но не удалось перезагрузить Xray")
+                    except:
+                        logger.info(f"✅ Пользователь {sanitize_log_input(email)} добавлен (перезагрузка вручную)")
+                    
+                    return True
+            
+            logger.error("❌ Не найден inbound 'vless-in'")
+            return False
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка прямого добавления: {sanitize_log_input(e)}")
             return False
     
     async def remove_user_from_xray(self, user_uuid: str, email: str) -> bool:
@@ -502,68 +587,131 @@ class XrayAPI:
             logger.error(f"Ошибка удаления: {e}")
     
     async def get_unique_uuid_from_pool(self, user_id: int) -> str:
-        """Получение уникального UUID из пула"""
+        """Генерация уникального UUID для каждого пользователя"""
         try:
-            # Создаем пул UUID если его нет
-            uuid_file = os.path.join(os.getenv('DATA_PATH', 'data'), 'uuid_pool.txt')
-            if not os.path.exists(uuid_file):
-                self.create_uuid_pool()
+            from database import Database
+            db = Database()
             
-            # Читаем пул UUID
-            with open(uuid_file, 'r') as f:
-                uuids = [line.strip() for line in f.readlines() if line.strip()]
+            # Проверяем, есть ли уже UUID у пользователя
+            existing_uuid = await db.get_user_uuid(user_id)
+            if existing_uuid:
+                return existing_uuid
             
-            # Выбираем UUID по остатку от деления
-            uuid_index = (user_id - 1) % len(uuids)
-            selected_uuid = uuids[uuid_index]
+            # Генерируем новый уникальный UUID
+            for attempt in range(10):
+                new_uuid = self._generate_secure_uuid(user_id, attempt)
+                if not await db.is_uuid_exists(new_uuid):
+                    await db.save_user_uuid(user_id, new_uuid)
+                    logger.info(f"Пользователь {sanitize_log_input(user_id)} получил уникальный UUID: {sanitize_log_input(new_uuid)}")
+                    return new_uuid
             
-            logger.info(f"Пользователь {user_id} получил UUID #{uuid_index + 1}: {selected_uuid}")
-            return selected_uuid
+            raise Exception("Не удалось сгенерировать уникальный UUID")
             
         except Exception as e:
-            logger.error(f"Ошибка получения UUID: {e}")
-            # Возвращаем сгенерированный UUID
+            logger.error(f"Ошибка получения UUID: {sanitize_log_input(e)}")
             return self._generate_secure_uuid(user_id)
     
-    def create_uuid_pool(self):
-        """Создание пула UUID"""
-        try:
-            import uuid
-            uuids = [str(uuid.uuid4()) for _ in range(5)]
-            
-            uuid_file = os.path.join(os.getenv('DATA_PATH', 'data'), 'uuid_pool.txt')
-            with open(uuid_file, 'w') as f:
-                for uuid_str in uuids:
-                    f.write(uuid_str + '\n')
-            
-            logger.info(f"Создан пул из {len(uuids)} UUID")
-            
-        except Exception as e:
-            logger.error(f"Ошибка создания пула UUID: {e}")
+
     
     def get_public_key_from_config(self) -> str:
-        """Получение публичного ключа"""
+        """Получение публичного ключа из конфига Xray"""
+        import json
         try:
-            # Создаем файл с ключом если его нет
-            key_file = os.path.join(os.getenv('DATA_PATH', 'data'), 'public_key.txt')
-            if not os.path.exists(key_file):
-                # Используем стандартный ключ
-                default_key = "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU"
-                with open(key_file, 'w') as f:
-                    f.write(default_key)
-                logger.info(f"Создан файл с ключом: {default_key}")
-                return default_key
+            # Пробуем разные пути к конфигу
+            possible_paths = [
+                "/usr/local/etc/xray/config.json",
+                "/etc/xray/config.json",
+                "/opt/xray/config.json"
+            ]
             
-            # Читаем файл с публичным ключом
-            with open(key_file, 'r') as f:
-                public_key = f.read().strip()
-                logger.info(f"Используем публичный ключ: {public_key}")
-                return public_key
+            config = None
+            for config_path in possible_paths:
+                if os.path.exists(config_path):
+                    with open(config_path, 'r') as f:
+                        config = json.loads(f.read())
+                    break
+            
+            if config:
+                    
+                for inbound in config.get('inbounds', []):
+                    if inbound.get('tag') == 'vless-in':
+                        stream_settings = inbound.get('streamSettings', {})
+                        reality_settings = stream_settings.get('realitySettings', {})
+                        public_key = reality_settings.get('publicKey')
+                        if public_key:
+                            logger.info(f"Публичный ключ из конфига: {public_key}")
+                            return public_key
+                        else:
+                            # Если нет ключа, генерируем новые
+                            logger.warning("Публичный ключ отсутствует, генерируем новые ключи")
+                            return self._generate_and_save_keys()
+            
+            # Если не нашли в конфиге, используем стандартный
+            default_key = "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU"
+            logger.info(f"Используем стандартный ключ: {default_key}")
+            return default_key
                 
         except Exception as e:
             logger.error(f"Ошибка чтения ключа: {e}")
-            # Возвращаем стандартный ключ
-            return "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU"
+            return self._generate_and_save_keys()
+    
+    def _generate_and_save_keys(self) -> str:
+        """Генерация и сохранение Reality ключей"""
+        import subprocess
+        try:
+            # Генерируем ключи
+            result = subprocess.run(['xray', 'x25519'], capture_output=True, text=True)
+            
+            private_key = None
+            public_key = None
+            
+            for line in result.stdout.split('\n'):
+                if 'Private key:' in line:
+                    private_key = line.split('Private key:')[1].strip()
+                elif 'Public key:' in line:
+                    public_key = line.split('Public key:')[1].strip()
+            
+            if private_key and public_key:
+                # Обновляем конфиг
+                self._update_reality_keys(private_key, public_key)
+                logger.info(f"Генерированы новые Reality ключи")
+                return public_key
+            
+        except Exception as e:
+            logger.error(f"Ошибка генерации ключей: {e}")
+        
+        return "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU"
+    
+    def _update_reality_keys(self, private_key: str, public_key: str):
+        """Обновление Reality ключей в конфиге"""
+        import json
+        
+        possible_paths = [
+            "/usr/local/etc/xray/config.json",
+            "/etc/xray/config.json",
+            "/opt/xray/config.json"
+        ]
+        
+        for config_path in possible_paths:
+            if os.path.exists(config_path):
+                try:
+                    with open(config_path, 'r') as f:
+                        config = json.load(f)
+                    
+                    for inbound in config['inbounds']:
+                        if inbound.get('tag') == 'vless-in':
+                            reality = inbound['streamSettings']['realitySettings']
+                            reality['privateKey'] = private_key
+                            reality['publicKey'] = public_key
+                            reality['dest'] = 'www.microsoft.com:443'
+                            reality['serverNames'] = ['www.microsoft.com']
+                    
+                    with open(config_path, 'w') as f:
+                        json.dump(config, f, indent=2)
+                    
+                    break
+                except Exception as e:
+                    logger.error(f"Ошибка обновления конфига: {e}")
     
     async def reset_user_traffic(self, user_uuid: str) -> Dict:
         """Сброс статистики трафика пользователя"""

@@ -3,10 +3,20 @@
 echo "🚀 Безопасная установка AirCloud VPN + Xray"
 echo "======================================================"
 
-# Проверяем наличие переменных окружения
+# Загружаем переменные окружения из .env файла
+if [ -f ".env" ]; then
+    export $(cat .env | grep -v '^#' | xargs)
+    echo "✅ Переменные окружения загружены из .env"
+else
+    echo "❌ Файл .env не найден"
+    echo "Создайте файл .env на основе .env.example"
+    exit 1
+fi
+
+# Проверяем наличие обязательных переменных
 if [ -z "$XRAY_SERVER_IP" ] || [ -z "$BOT_TOKEN" ]; then
     echo "❌ Ошибка: Не заданы обязательные переменные окружения"
-    echo "Создайте файл .env на основе .env.example"
+    echo "Проверьте файл .env"
     exit 1
 fi
 
@@ -59,7 +69,13 @@ cat > /usr/local/etc/xray/config.json << EOF
             "port": 443,
             "protocol": "vless",
             "settings": {
-                "clients": [],
+                "clients": [
+                    {
+                        "id": "00000000-0000-0000-0000-000000000000",
+                        "email": "admin@aircloud.vpn",
+                        "flow": "xtls-rprx-vision"
+                    }
+                ],
                 "decryption": "none"
             },
             "streamSettings": {
@@ -97,24 +113,84 @@ cat > /usr/local/etc/xray/config.json << EOF
 }
 EOF
 
-# Генерируем UUID для пула
-echo "🔑 Генерируем UUID для пула..."
+# Создаем директорию для данных
+echo "📁 Создаем директорию для данных..."
 mkdir -p data
-for i in {1..5}; do
-    xray uuid >> data/uuid_pool.txt
-done
 
 # Сохраняем публичный ключ
 echo "$PUBLIC_KEY" > data/public_key.txt
 
 echo "🔑 Сохранено для бота:"
-echo "- UUID пул: $(wc -l < data/uuid_pool.txt) пользователей"
 echo "- Public Key: $PUBLIC_KEY"
+echo "- UUID будут генерироваться уникально для каждого пользователя"
 
 # Запускаем Xray
 echo "🚀 Запускаем Xray..."
 systemctl enable xray
 systemctl restart xray
+
+# Создаем скрипт для добавления пользователей
+cat > /usr/local/bin/add_user_to_xray.py << 'SCRIPT_EOF'
+#!/usr/bin/env python3
+import json
+import sys
+import os
+
+def add_user_to_config(user_uuid, email):
+    config_path = '/usr/local/etc/xray/config.json'
+    
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+        
+        for inbound in config.get('inbounds', []):
+            if inbound.get('tag') == 'vless-in':
+                clients = inbound.get('settings', {}).get('clients', [])
+                
+                for client in clients:
+                    if client.get('id') == user_uuid:
+                        print(f"User {email} already exists")
+                        return True
+                
+                new_client = {
+                    "id": user_uuid,
+                    "email": email,
+                    "flow": "xtls-rprx-vision"
+                }
+                clients.append(new_client)
+                
+                with open(config_path, 'w') as f:
+                    json.dump(config, f, indent=2)
+                
+                print(f"User {email} added")
+                return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        sys.exit(1)
+    
+    user_uuid = sys.argv[1]
+    email = sys.argv[2]
+    
+    if add_user_to_config(user_uuid, email):
+        os.system("systemctl reload xray")
+SCRIPT_EOF
+
+chmod +x /usr/local/bin/add_user_to_xray.py
+
+# Устанавливаем сервис для добавления пользователей
+echo "🌐 Устанавливаем сервис добавления пользователей..."
+cp xray_user_service.py /root/
+cp xray-user-service.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable xray-user-service
+systemctl start xray-user-service
 
 # Запускаем бота с переменными окружения
 echo "🤖 Запускаем бота..."

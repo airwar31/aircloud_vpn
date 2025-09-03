@@ -9,16 +9,17 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+      - /usr/local/etc/xray:/usr/local/etc/xray:rw
+      - /etc/xray:/etc/xray:rw
+      - /usr/local/bin/xray:/usr/local/bin/xray:ro
     environment:
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_IDS=${ADMIN_IDS}
       - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID}
       - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY}
-      - XRAY_API_URL=${XRAY_API_URL}
-      - XRAY_API_USERNAME=${XRAY_API_USERNAME}
-      - XRAY_API_PASSWORD=${XRAY_API_PASSWORD}
+      # X-UI API не нужен для прямой работы с Xray
       - XRAY_SERVER_IP=${XRAY_SERVER_IP}
       - XRAY_SERVER_PORT=${XRAY_SERVER_PORT:-443}
       - DATABASE_PATH=/app/data/aircloud_vpn.db
       - DATA_PATH=/app/data
-    network_mode: host
+    network_mode: host  # Нужен для доступа к localhost сервису

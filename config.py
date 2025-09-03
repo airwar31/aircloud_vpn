@@ -20,15 +20,12 @@ if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
     raise ValueError("YooKassa credentials are required")
 
 # 3X-UI API
-XRAY_API_URL = os.getenv("XRAY_API_URL")
-XRAY_API_KEY = os.getenv("XRAY_API_KEY", "")
-XRAY_API_USERNAME = os.getenv("XRAY_API_USERNAME")
-XRAY_API_PASSWORD = os.getenv("XRAY_API_PASSWORD")
+# Только IP и порт сервера нужны для прямой работы с Xray
 XRAY_SERVER_IP = os.getenv("XRAY_SERVER_IP")
 XRAY_SERVER_PORT = os.getenv("XRAY_SERVER_PORT", "443")
 
-if not all([XRAY_API_URL, XRAY_API_USERNAME, XRAY_API_PASSWORD, XRAY_SERVER_IP]):
-    raise ValueError("X-UI API credentials are required")
+if not XRAY_SERVER_IP:
+    raise ValueError("XRAY_SERVER_IP is required")
 
 # Тарифные планы
 SUBSCRIPTION_PLANS = {
