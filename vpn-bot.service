@@ -1,0 +1,22 @@
+[Unit]
+Description=VPN Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/path/to/your/vpn-bot
+ExecStart=/usr/bin/python3 /path/to/your/vpn-bot/run.py
+Restart=always
+RestartSec=10
+
+# Переменные окружения (альтернатива .env файлу)
+# Environment=BOT_TOKEN=your_bot_token
+# Environment=YOOKASSA_SHOP_ID=your_shop_id
+# Environment=YOOKASSA_SECRET_KEY=your_secret_key
+# Environment=X_UI_URL=http://localhost:54321
+# Environment=X_UI_USERNAME=admin
+# Environment=X_UI_PASSWORD=your_password
+
+[Install]
+WantedBy=multi-user.target
