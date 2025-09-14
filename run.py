@@ -19,12 +19,14 @@ except ImportError as e:
     sys.exit(1)
 
 def check_env_file():
-    """Проверка наличия файла .env"""
-    env_file = Path(".env")
-    if not env_file.exists():
-        print("❌ Файл .env не найден!")
-        print("📝 Скопируйте .env.example в .env и заполните настройки:")
-        print("   cp .env.example .env")
+    """Проверка наличия переменных окружения"""
+    import os
+    required_vars = ['BOT_TOKEN', 'YOOKASSA_SHOP_ID', 'YOOKASSA_SECRET_KEY']
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    
+    if missing_vars:
+        print(f"❌ Отсутствуют переменные окружения: {', '.join(missing_vars)}")
+        print("📝 Проверьте файл .env или переменные окружения")
         return False
     return True
 

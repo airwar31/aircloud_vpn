@@ -20,6 +20,7 @@ XRAY_BINARY = "/usr/local/bin/xray"
 class XrayAPI:
     def __init__(self):
         self.clients = {}
+        self.reality_keys = self.generate_reality_keys()
         self.load_config()
         
     def load_config(self):
@@ -49,13 +50,14 @@ class XrayAPI:
         """Перезапуск Xray"""
         try:
             subprocess.run(["pkill", "-f", "xray"], check=False)
-            subprocess.Popen([XRAY_BINARY, "-config", XRAY_CONFIG_PATH])
+            subprocess.Popen([XRAY_BINARY, "-config", XRAY_CONFIG_PATH], 
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             logger.info("Xray перезапущен")
         except Exception as e:
             logger.error(f"Ошибка перезапуска Xray: {e}")
             
     def get_default_config(self) -> Dict[str, Any]:
-        """Базовая конфигурация Xray"""
+        """Базовая конфигурация Xray с Reality"""
         return {
             "log": {"loglevel": "warning"},
             "inbounds": [{
@@ -64,7 +66,18 @@ class XrayAPI:
                 "settings": {"clients": [], "decryption": "none"},
                 "streamSettings": {
                     "network": "tcp",
-                    "security": "none"
+                    "security": "reality",
+                    "realitySettings": {
+                        "show": False,
+                        "dest": "dl.google.com:443",
+                        "xver": 0,
+                        "serverNames": ["dl.google.com"],
+                        "privateKey": self.reality_keys["private_key"],
+                        "shortIds": [self.reality_keys["short_id"]]
+                    },
+                    "tcpSettings": {
+                        "acceptProxyProtocol": False
+                    }
                 }
             }],
             "outbounds": [{
@@ -79,7 +92,8 @@ class XrayAPI:
             client = {
                 "id": client_id,
                 "email": email,
-                "enable": True
+                "enable": True,
+                "flow": "xtls-rprx-vision"
             }
             
             # Добавляем клиента в конфигурацию
@@ -125,12 +139,14 @@ class XrayAPI:
             return False
             
     def generate_client_config(self, client_id: str, email: str) -> str:
-        """Генерация конфигурации для клиента"""
+        """Генерация конфигурации для клиента с Reality"""
         server_ip = os.getenv("SERVER_IP", "YOUR_SERVER_IP")
         port = self.config["inbounds"][0]["port"]
         
-        # VLESS конфигурация
-        config = f"vless://{client_id}@{server_ip}:{port}?type=tcp&security=none#{email}"
+        # VLESS конфигурация с Reality
+        config = (f"vless://{client_id}@{server_ip}:{port}?"
+                 f"type=tcp&security=reality&pbk={self.reality_keys['public_key']}&"
+                 f"fp=chrome&sni=dl.google.com&sid={self.reality_keys['short_id']}&spx=%2F&flow=xtls-rprx-vision#{email}")
         return config
         
     def get_client_stats(self, email: str) -> Dict[str, Any]:
@@ -149,6 +165,40 @@ class XrayAPI:
                 "is_active": not is_expired and client["up"] + client["down"] < client["traffic_limit"]
             }
         return {}
+        
+    def generate_reality_keys(self) -> Dict[str, str]:
+        """Генерация Reality ключей через Xray"""
+        try:
+            result = subprocess.run([XRAY_BINARY, "x25519"], capture_output=True, text=True)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                private_key = lines[0].split(': ')[1]
+                public_key = lines[1].split(': ')[1]
+                
+                # Генерируем короткий ID
+                import secrets
+                short_id = secrets.token_hex(1)
+                
+                return {
+                    "private_key": private_key,
+                    "public_key": public_key,
+                    "short_id": short_id
+                }
+            else:
+                logger.error(f"Ошибка генерации ключей: {result.stderr}")
+                # Fallback ключи
+                return {
+                    "private_key": "YChtgAKv3VnPgWFKlqJKXg7pHyKhZZZvqw2M8UEhzQs",
+                    "public_key": "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU",
+                    "short_id": "71"
+                }
+        except Exception as e:
+            logger.error(f"Ошибка генерации Reality ключей: {e}")
+            return {
+                "private_key": "YChtgAKv3VnPgWFKlqJKXg7pHyKhZZZvqw2M8UEhzQs",
+                "public_key": "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU",
+                "short_id": "71"
+            }
 
 # Глобальный экземпляр API
 xray_api = XrayAPI()

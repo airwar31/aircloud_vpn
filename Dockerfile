@@ -2,16 +2,19 @@ FROM python:3.11-slim
 
 # Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
-    curl \
+    wget \
     unzip \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # Установка Xray
-RUN curl -L https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip -o xray.zip \
+RUN wget -O xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip \
     && unzip xray.zip \
     && mv xray /usr/local/bin/ \
     && chmod +x /usr/local/bin/xray \
     && rm xray.zip
+
+
 
 # Создание рабочей директории
 WORKDIR /app
@@ -19,6 +22,7 @@ WORKDIR /app
 # Копирование файлов
 COPY requirements.txt .
 COPY xray_api.py .
+
 
 # Установка Python зависимостей
 RUN pip install --no-cache-dir -r requirements.txt

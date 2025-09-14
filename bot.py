@@ -304,7 +304,7 @@ class VPNBot:
                 db.update_order_status(payment_id, "paid")
                 
                 # Создаем VPN ключ
-                vpn_result = await self.create_vpn_client(user_id, plan_id)
+                vpn_result = await self.create_vpn_client(user_id, plan_id, callback.from_user.username)
                 
                 if vpn_result:
                     vpn_config, email, expires_at = vpn_result
@@ -350,10 +350,15 @@ class VPNBot:
             logger.error(f"Ошибка проверки платежа {payment_id}: {e}")
             await callback.answer("❌ Ошибка проверки платежа")
             
-    async def create_vpn_client(self, user_id: int, plan_id: str) -> Optional[tuple]:
+    async def create_vpn_client(self, user_id: int, plan_id: str, username: str = None) -> Optional[tuple]:
         """Создание VPN клиента через Xray API"""
         plan = VPN_PLANS[plan_id]
-        email = f"user_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        # Используем username или генерируем ID
+        if username:
+            email = f"{username}_{datetime.now().strftime('%m%d')}"
+        else:
+            email = f"user_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
         async with XrayManager(XRAY_API_URL) as xray:
             result = await xray.add_client(email, plan)

@@ -7,8 +7,8 @@ services:
     ports:
       - "8080:8080"  # API порт
       - "443:443"    # VPN порт
-    environment:
-      - SERVER_IP=${SERVER_IP:-YOUR_SERVER_IP}
+    env_file:
+      - .env
     volumes:
       - ./xray-config:/etc/xray
       - ./xray-logs:/var/log/xray
@@ -21,10 +21,9 @@ services:
       context: .
       dockerfile: Dockerfile.bot
     container_name: vpn-bot
+    env_file:
+      - .env
     environment:
-      - BOT_TOKEN=${BOT_TOKEN}
-      - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID}
-      - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY}
       - XRAY_API_URL=http://xray-api:8080
     volumes:
       - ./bot-data:/app/data
