@@ -23,7 +23,7 @@ class XrayManager:
         if self.session:
             await self.session.close()
             
-    async def add_client(self, email: str, plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def add_client(self, email: str, plan: Dict[str, Any], devices: int = 1) -> Optional[Dict[str, Any]]:
         """Добавление клиента"""
         try:
             client_id = str(uuid.uuid4())
@@ -32,9 +32,9 @@ class XrayManager:
             client_data = {
                 "email": email,
                 "id": client_id,
-                "traffic_limit": plan["traffic"] * 1024 * 1024 * 1024,  # В байтах
                 "expires_at": expires_at.isoformat(),
-                "enable": True
+                "enable": True,
+                "devices": devices
             }
             
             async with self.session.post(

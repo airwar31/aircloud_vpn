@@ -32,6 +32,22 @@ services:
     restart: unless-stopped
     networks:
       - vpn-network
+      
+  device-monitor:
+    build:
+      context: .
+      dockerfile: Dockerfile.monitor
+    container_name: device-monitor
+    env_file:
+      - .env
+    volumes:
+      - ./bot-data:/app/data
+    depends_on:
+      - xray-api
+      - vpn-bot
+    restart: unless-stopped
+    networks:
+      - vpn-network
 
 networks:
   vpn-network:

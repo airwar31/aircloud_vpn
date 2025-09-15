@@ -86,14 +86,15 @@ class XrayAPI:
             }]
         }
         
-    def add_client(self, email: str, client_id: str, traffic_limit: int, expires_at: str) -> str:
+    def add_client(self, email: str, client_id: str, expires_at: str, devices: int = 1) -> str:
         """Добавление клиента"""
         try:
             client = {
                 "id": client_id,
                 "email": email,
                 "enable": True,
-                "flow": "xtls-rprx-vision"
+                "flow": "xtls-rprx-vision",
+                "limitIp": devices  # Ограничение устройств
             }
             
             # Добавляем клиента в конфигурацию
@@ -102,7 +103,6 @@ class XrayAPI:
             # Сохраняем информацию о клиенте
             self.clients[email] = {
                 "id": client_id,
-                "traffic_limit": traffic_limit,
                 "expires_at": expires_at,
                 "up": 0,
                 "down": 0
@@ -159,10 +159,9 @@ class XrayAPI:
             return {
                 "email": email,
                 "traffic_used": client["up"] + client["down"],
-                "traffic_limit": client["traffic_limit"],
                 "expires_at": client["expires_at"],
                 "is_expired": is_expired,
-                "is_active": not is_expired and client["up"] + client["down"] < client["traffic_limit"]
+                "is_active": not is_expired
             }
         return {}
         
@@ -210,13 +209,14 @@ def add_client():
         data = request.get_json()
         email = data.get('email')
         client_id = data.get('id')
-        traffic_limit = data.get('traffic_limit')
         expires_at = data.get('expires_at')
+        devices = data.get('devices', 1)
         
-        if not all([email, client_id, traffic_limit, expires_at]):
+        if not all([email, client_id, expires_at]):
             return jsonify({"error": "Missing required fields"}), 400
             
-        config = xray_api.add_client(email, client_id, traffic_limit, expires_at)
+        devices = data.get('devices', 1)
+        config = xray_api.add_client(email, client_id, expires_at, devices)
         
         return jsonify({
             "success": True,

@@ -58,9 +58,39 @@ class Database:
                     config TEXT NOT NULL,
                     expires_at TIMESTAMP NOT NULL,
                     traffic_limit INTEGER NOT NULL,
+                    device_limit INTEGER DEFAULT 1,
                     is_active BOOLEAN DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (telegram_id),
+                    FOREIGN KEY (order_id) REFERENCES orders (id)
+                )
+            """)
+            
+            # Таблица рефералов
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS referrals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    referrer_id INTEGER NOT NULL,
+                    referred_id INTEGER NOT NULL,
+                    bonus_amount INTEGER DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (referrer_id) REFERENCES users (telegram_id),
+                    FOREIGN KEY (referred_id) REFERENCES users (telegram_id)
+                )
+            """)
+            
+            # Таблица реферальных выплат
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS referral_earnings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    referrer_id INTEGER NOT NULL,
+                    referred_id INTEGER NOT NULL,
+                    order_id INTEGER NOT NULL,
+                    plan_id TEXT NOT NULL,
+                    amount INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (referrer_id) REFERENCES users (telegram_id),
+                    FOREIGN KEY (referred_id) REFERENCES users (telegram_id),
                     FOREIGN KEY (order_id) REFERENCES orders (id)
                 )
             """)
@@ -160,16 +190,16 @@ class Database:
             return None
             
     def add_vpn_key(self, user_id: int, order_id: int, email: str, 
-                    config: str, expires_at: datetime, traffic_limit: int) -> bool:
+                    config: str, expires_at: datetime, traffic_limit: int, device_limit: int = 1) -> bool:
         """Добавление VPN ключа"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO vpn_keys 
-                    (user_id, order_id, email, config, expires_at, traffic_limit)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (user_id, order_id, email, config, expires_at, traffic_limit))
+                    (user_id, order_id, email, config, expires_at, traffic_limit, device_limit)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (user_id, order_id, email, config, expires_at, traffic_limit, device_limit))
                 conn.commit()
                 logger.info(f"VPN ключ добавлен для пользователя {user_id}")
                 return True
@@ -193,6 +223,94 @@ class Database:
             logger.error(f"Ошибка получения VPN ключей: {e}")
             return []
             
+    def add_referral(self, referrer_id: int, referred_id: int, bonus_amount: int = 0) -> bool:
+        """Добавление реферала"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO referrals (referrer_id, referred_id, bonus_amount)
+                    VALUES (?, ?, ?)
+                """, (referrer_id, referred_id, bonus_amount))
+                conn.commit()
+                logger.info(f"Реферал добавлен: {referrer_id} -> {referred_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка добавления реферала: {e}")
+            return False
+            
+    def get_referrals(self, user_id: int) -> List[Dict[str, Any]]:
+        """Получение рефералов пользователя"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT r.*, u.username, u.first_name 
+                    FROM referrals r
+                    LEFT JOIN users u ON r.referred_id = u.telegram_id
+                    WHERE r.referrer_id = ?
+                    ORDER BY r.created_at DESC
+                """, (user_id,))
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения рефералов: {e}")
+            return []
+            
+    def get_referral_bonus(self, user_id: int) -> int:
+        """Получение суммы реферального бонуса"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT SUM(bonus_amount) FROM referrals WHERE referrer_id = ?
+                """, (user_id,))
+                result = cursor.fetchone()[0]
+                return result or 0
+        except Exception as e:
+            logger.error(f"Ошибка получения бонуса: {e}")
+            return 0
+            
+    def add_referral_earning(self, referrer_id: int, referred_id: int, order_id: int, plan_id: str, amount: int) -> bool:
+        """Добавление реферальной выплаты"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO referral_earnings (referrer_id, referred_id, order_id, plan_id, amount)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (referrer_id, referred_id, order_id, plan_id, amount))
+                conn.commit()
+                logger.info(f"Реферальная выплата: {referrer_id} получил {amount}₽")
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка добавления выплаты: {e}")
+            return False
+            
+    def get_referrer(self, user_id: int) -> Optional[int]:
+        """Получение ID реферера"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT referrer_id FROM referrals WHERE referred_id = ?", (user_id,))
+                result = cursor.fetchone()
+                return result[0] if result else None
+        except Exception as e:
+            logger.error(f"Ошибка получения реферера: {e}")
+            return None
+            
+    def get_total_referral_earnings(self, user_id: int) -> int:
+        """Получение общей суммы реферальных выплат"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT SUM(amount) FROM referral_earnings WHERE referrer_id = ?", (user_id,))
+                result = cursor.fetchone()[0]
+                return result or 0
+        except Exception as e:
+            logger.error(f"Ошибка получения выплат: {e}")
+            return 0
+    
     def get_stats(self) -> Dict[str, int]:
         """Получение статистики"""
         try:
@@ -224,6 +342,68 @@ class Database:
         except Exception as e:
             logger.error(f"Ошибка получения статистики: {e}")
             return {}
+            
+    def get_all_users(self) -> List[Dict[str, Any]]:
+        """Получение всех пользователей"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE is_active = 1")
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователей: {e}")
+            return []
+            
+    def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
+        """Получение пользователя по username"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователя по username: {e}")
+            return None
+            
+    def get_total_referrals(self) -> int:
+        """Получение общего количества рефералов"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM referrals")
+                return cursor.fetchone()[0]
+        except Exception as e:
+            logger.error(f"Ошибка получения количества рефералов: {e}")
+            return 0
+            
+    def get_total_referral_payouts(self) -> int:
+        """Получение общей суммы реферальных выплат"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT SUM(amount) FROM referral_earnings")
+                result = cursor.fetchone()[0]
+                return result or 0
+        except Exception as e:
+            logger.error(f"Ошибка получения суммы выплат: {e}")
+            return 0
+            
+    def get_user_vpn_keys_by_email(self, email: str) -> List[Dict[str, Any]]:
+        """Получение VPN ключей по email"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT * FROM vpn_keys
+                    WHERE email = ? AND is_active = 1
+                """, (email,))
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения VPN ключей по email: {e}")
+            return []
 
 # Глобальный экземпляр базы данных
 db = Database()
