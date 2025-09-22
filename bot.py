@@ -144,7 +144,17 @@ class VPNBot:
         
         # Обрабатываем подарочный код
         if gift_code:
+            logger.info(f"Получен подарочный код: {gift_code} от пользователя {user.id}")
+            logger.info(f"Путь к БД: {db.db_path}")
+            # Проверяем, есть ли код в БД
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM gift_links WHERE gift_code = ?", (gift_code,))
+                existing = cursor.fetchone()
+                logger.info(f"Код в БД: {dict(existing) if existing else 'НЕ НАЙДЕН'}")
+            
             days = db.use_gift_link(gift_code, user.id)
+            logger.info(f"Результат использования кода: {days}")
             if days:
                 # Создаем подарочный VPN ключ
                 vpn_result = await self.create_gift_vpn_client(user.id, days)
@@ -746,7 +756,16 @@ class VPNBot:
             gift_code = f"gift_{uuid.uuid4().hex[:8]}"
             
             # Сохраняем в БД
+            logger.info(f"Создаем подарочный код: {gift_code} на {days} дней")
+            logger.info(f"Путь к БД: {db.db_path}")
             if db.create_gift_link(gift_code, days):
+                logger.info(f"Подарочный код успешно сохранен в БД")
+                # Проверяем сохранение
+                with db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT * FROM gift_links WHERE gift_code = ?", (gift_code,))
+                    saved = cursor.fetchone()
+                    logger.info(f"Проверка: {dict(saved) if saved else 'НЕ НАЙДЕН'}")
                 bot_username = (await self.bot.get_me()).username
                 gift_link = f"https://t.me/{bot_username}?start={gift_code}"
                 
@@ -759,6 +778,7 @@ class VPNBot:
                     parse_mode="HTML"
                 )
             else:
+                logger.error(f"Ошибка сохранения кода {gift_code} в БД")
                 await message.answer("❌ Ошибка создания подарочной ссылки")
             
             await state.clear()
