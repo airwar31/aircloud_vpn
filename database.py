@@ -53,7 +53,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS vpn_keys (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
-                    order_id INTEGER NOT NULL,
+                    order_id INTEGER,
                     email TEXT NOT NULL,
                     config TEXT NOT NULL,
                     expires_at TIMESTAMP NOT NULL,
@@ -92,6 +92,20 @@ class Database:
                     FOREIGN KEY (referrer_id) REFERENCES users (telegram_id),
                     FOREIGN KEY (referred_id) REFERENCES users (telegram_id),
                     FOREIGN KEY (order_id) REFERENCES orders (id)
+                )
+            """)
+            
+            # Таблица подарочных ссылок
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS gift_links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    gift_code TEXT UNIQUE NOT NULL,
+                    days INTEGER NOT NULL,
+                    is_used BOOLEAN DEFAULT 0,
+                    used_by INTEGER,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    used_at TIMESTAMP,
+                    FOREIGN KEY (used_by) REFERENCES users (telegram_id)
                 )
             """)
             
@@ -189,7 +203,7 @@ class Database:
             logger.error(f"Ошибка получения заказа: {e}")
             return None
             
-    def add_vpn_key(self, user_id: int, order_id: int, email: str, 
+    def add_vpn_key(self, user_id: int, order_id: Optional[int], email: str, 
                     config: str, expires_at: datetime, traffic_limit: int, device_limit: int = 1) -> bool:
         """Добавление VPN ключа"""
         try:
@@ -404,6 +418,54 @@ class Database:
         except Exception as e:
             logger.error(f"Ошибка получения VPN ключей по email: {e}")
             return []
+            
+    def create_gift_link(self, gift_code: str, days: int) -> bool:
+        """Создание подарочной ссылки"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO gift_links (gift_code, days)
+                    VALUES (?, ?)
+                """, (gift_code, days))
+                conn.commit()
+                logger.info(f"Подарочная ссылка создана: {gift_code} на {days} дней")
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка создания подарочной ссылки: {e}")
+            return False
+            
+    def use_gift_link(self, gift_code: str, user_id: int) -> Optional[int]:
+        """Использование подарочной ссылки"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Проверяем, существует ли код и не использован ли он
+                cursor.execute("""
+                    SELECT days FROM gift_links 
+                    WHERE gift_code = ? AND is_used = 0
+                """, (gift_code,))
+                result = cursor.fetchone()
+                
+                if not result:
+                    return None
+                    
+                days = result[0]
+                
+                # Отмечаем как использованный
+                cursor.execute("""
+                    UPDATE gift_links 
+                    SET is_used = 1, used_by = ?, used_at = CURRENT_TIMESTAMP
+                    WHERE gift_code = ?
+                """, (user_id, gift_code))
+                conn.commit()
+                
+                logger.info(f"Подарочная ссылка {gift_code} использована пользователем {user_id}")
+                return days
+        except Exception as e:
+            logger.error(f"Ошибка использования подарочной ссылки: {e}")
+            return None
 
 # Глобальный экземпляр базы данных
 db = Database()

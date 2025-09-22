@@ -66,7 +66,18 @@ class XrayAPI:
                 "settings": {"clients": [], "decryption": "none"},
                 "streamSettings": {
                     "network": "tcp",
-                    "security": "none"
+                    "security": "reality",
+                    "realitySettings": {
+                        "show": False,
+                        "dest": "dl.google.com:443",
+                        "xver": 0,
+                        "serverNames": ["dl.google.com"],
+                        "privateKey": self.reality_keys["private_key"],
+                        "shortIds": [self.reality_keys["short_id"]]
+                    },
+                    "tcpSettings": {
+                        "acceptProxyProtocol": False
+                    }
                 }
             }],
             "outbounds": [{
@@ -81,7 +92,9 @@ class XrayAPI:
             client = {
                 "id": client_id,
                 "email": email,
-                "enable": True
+                "enable": True,
+                "flow": "xtls-rprx-vision",
+                "limitIp": devices  # Ограничение устройств
             }
             
             # Добавляем клиента в конфигурацию
@@ -130,8 +143,10 @@ class XrayAPI:
         server_ip = os.getenv("SERVER_IP", "YOUR_SERVER_IP")
         port = self.config["inbounds"][0]["port"]
         
-        # VLESS конфигурация без Reality
-        config = f"vless://{client_id}@{server_ip}:{port}?type=tcp&security=none#{email}"
+        # VLESS конфигурация с Reality
+        config = (f"vless://{client_id}@{server_ip}:{port}?"
+                 f"type=tcp&security=reality&pbk={self.reality_keys['public_key']}&"
+                 f"fp=chrome&sni=dl.google.com&sid={self.reality_keys['short_id']}&spx=%2F&flow=xtls-rprx-vision#{email}")
         return config
         
     def get_client_stats(self, email: str) -> Dict[str, Any]:

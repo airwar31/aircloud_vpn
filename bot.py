@@ -31,83 +31,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class OrderStates(StatesGroup):
-    selecting_period = State()
-    selecting_devices = State()
     waiting_payment = State()
 
-class XUIClient:
-    """Клиент для работы с X-UI API"""
-    
-    def __init__(self, url: str, username: str, password: str):
-        self.url = url.rstrip('/')
-        self.username = username
-        self.password = password
-        self.session = None
-        
-    async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
-        await self.login()
-        return self
-        
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.close()
-            
-    async def login(self):
-        """Авторизация в X-UI"""
-        try:
-            login_data = {
-                "username": self.username,
-                "password": self.password
-            }
-            async with self.session.post(f"{self.url}/login", data=login_data) as resp:
-                if resp.status == 200:
-                    logger.info("Успешная авторизация в X-UI")
-                    return True
-                else:
-                    logger.error(f"Ошибка авторизации в X-UI: {resp.status}")
-                    return False
-        except Exception as e:
-            logger.error(f"Ошибка подключения к X-UI: {e}")
-            return False
-            
-    async def get_inbounds(self) -> Optional[list]:
-        """Получение списка inbound'ов"""
-        try:
-            async with self.session.get(f"{self.url}/panel/api/inbounds/list") as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return data.get("obj", [])
-                else:
-                    logger.error(f"Ошибка получения inbound'ов: {resp.status}")
-                    return None
-        except Exception as e:
-            logger.error(f"Ошибка получения inbound'ов: {e}")
-            return None
-            
-    async def add_client(self, inbound_id: int, client_data: dict) -> bool:
-        """Добавление клиента к inbound"""
-        try:
-            payload = {
-                "id": inbound_id,
-                "settings": json.dumps({"clients": [client_data]})
-            }
-            
-            async with self.session.post(
-                f"{self.url}/panel/api/inbounds/addClient",
-                json=payload
-            ) as resp:
-                if resp.status == 200:
-                    logger.info(f"Клиент {client_data['email']} успешно добавлен")
-                    return True
-                else:
-                    logger.error(f"Ошибка добавления клиента: {resp.status}")
-                    text = await resp.text()
-                    logger.error(f"Ответ сервера: {text}")
-                    return False
-        except Exception as e:
-            logger.error(f"Ошибка добавления клиента: {e}")
-            return False
+class AdminStates(StatesGroup):
+    waiting_gift_user_id = State()
+    waiting_gift_days = State()
+    waiting_gift_link_days = State()
 
 class VPNBot:
     def __init__(self):
@@ -121,12 +50,12 @@ class VPNBot:
         self.dp.message.register(self.cmd_help, Command("help"))
         self.dp.message.register(self.cmd_profile, Command("profile"))
         self.dp.callback_query.register(
-            self.process_period_selection, 
-            F.data.startswith("period_")
+            self.show_plans, 
+            F.data == "buy_vpn"
         )
         self.dp.callback_query.register(
-            self.process_device_selection, 
-            F.data.startswith("device_")
+            self.process_plan_selection, 
+            F.data.startswith("plan_")
         )
         self.dp.callback_query.register(
             self.process_payment_check, 
@@ -152,16 +81,41 @@ class VPNBot:
             self.back_to_menu, 
             F.data == "back_menu"
         )
+        self.dp.callback_query.register(
+            self.admin_gift_key, 
+            F.data == "admin_gift_key"
+        )
+        self.dp.callback_query.register(
+            self.admin_gift_link, 
+            F.data == "admin_gift_link"
+        )
+        self.dp.message.register(
+            self.process_gift_user_id,
+            AdminStates.waiting_gift_user_id
+        )
+        self.dp.message.register(
+            self.process_gift_days,
+            AdminStates.waiting_gift_days
+        )
+        self.dp.message.register(
+            self.process_gift_link_days,
+            AdminStates.waiting_gift_link_days
+        )
         
     async def cmd_start(self, message: types.Message):
         """Обработчик команды /start"""
-        # Проверяем реферальную ссылку
+        # Проверяем реферальную ссылку или подарочный код
         referrer_id = None
+        gift_code = None
         if len(message.text.split()) > 1:
-            try:
-                referrer_id = int(message.text.split()[1])
-            except ValueError:
-                pass
+            param = message.text.split()[1]
+            if param.startswith("gift_"):
+                gift_code = param
+            else:
+                try:
+                    referrer_id = int(param)
+                except ValueError:
+                    pass
                 
         # Добавляем пользователя в БД
         user = message.from_user
@@ -188,27 +142,50 @@ class VPNBot:
                 except:
                     pass
         
-        # Основные кнопки тарифов
-        keyboard_buttons = [
-            [InlineKeyboardButton(
-                text=f"{period['name']} - от {period['base_price']}₽", 
-                callback_data=f"period_{period_id}"
-            )]
-            for period_id, period in BASE_PLANS.items()
-        ]
+        # Обрабатываем подарочный код
+        if gift_code:
+            days = db.use_gift_link(gift_code, user.id)
+            if days:
+                # Создаем подарочный VPN ключ
+                vpn_result = await self.create_gift_vpn_client(user.id, days)
+                
+                if vpn_result:
+                    vpn_config, email, expires_at = vpn_result
+                    
+                    db.add_vpn_key(
+                        user_id=user.id,
+                        order_id=None,
+                        email=email,
+                        config=vpn_config,
+                        expires_at=expires_at,
+                        traffic_limit=0
+                    )
+                    
+                    await message.answer(
+                        f"🎁 <b>Поздравляем! Вы активировали подарочный код!</b>\n\n"
+                        f"🔑 <b>Ваш VPN ключ:</b>\n"
+                        f"<code>{vpn_config}</code>\n\n"
+                        f"⏰ <b>Действует до:</b> {expires_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+                        "📱 Используйте /help для инструкции по подключению",
+                        parse_mode="HTML"
+                    )
+                    return
+                else:
+                    await message.answer("❌ Ошибка создания VPN ключа. Обратитесь в поддержку.")
+                    return
+            else:
+                await message.answer("❌ Подарочный код недействителен или уже использован.")
+                return
         
-        # Обычные кнопки
-        keyboard_buttons.extend([
+        keyboard_buttons = [
+            [InlineKeyboardButton(text="💳 Купить VPN", callback_data="buy_vpn")],
             [InlineKeyboardButton(text="👤 Мои ключи", callback_data="my_keys")],
             [InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals")]
-        ])
+        ]
         
-        # Кнопка админ-панели для админов
         if user.id in ADMIN_IDS:
-            keyboard_buttons.append([
-                InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel")
-            ])
-        
+            keyboard_buttons.append([InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel")])
+            
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
         
         await message.answer(
@@ -216,7 +193,7 @@ class VPNBot:
             "🔐 Быстрый и надежный VPN\n"
             "⚡ Безлимитный трафик\n"
             "🔒 Максимальная безопасность\n\n"
-            "📅 <b>Шаг 1:</b> Выберите срок подписки:",
+            "Используйте кнопки ниже для навигации:",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
@@ -266,61 +243,40 @@ class VPNBot:
             parse_mode="HTML"
         )
         
-    async def process_period_selection(self, callback: types.CallbackQuery, state: FSMContext):
-        """Обработка выбора периода подписки"""
-        period_id = callback.data.split("_")[1]
-        period = BASE_PLANS.get(period_id)
-        
-        if not period:
-            await callback.answer("❌ Неверный период")
-            return
-            
-        await state.update_data(period_id=period_id)
-        
+    async def show_plans(self, callback: types.CallbackQuery):
+        """Показ тарифов"""
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(
-                text=f"{device['name']} (+{device['extra_price']}₽)", 
-                callback_data=f"device_{period_id}_{device_count}"
+                text=f"{plan['name']} - {plan['price']}₽", 
+                callback_data=f"plan_{plan_id}"
             )]
-            for device_count, device in DEVICE_PLANS.items()
+            for plan_id, plan in VPN_PLANS.items()
         ] + [
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_menu")]
         ])
         
         await callback.message.edit_text(
-            f"📅 <b>Выбрано:</b> {period['name']}\n"
-            f"💰 <b>Базовая цена:</b> {period['base_price']}₽\n\n"
-            f"📱 <b>Шаг 2:</b> Выберите количество устройств:",
+            "💳 <b>Выберите тариф:</b>\n\n"
+            "🔥 Безлимитный трафик\n"
+            "⚡ Высокая скорость\n"
+            "🔒 Полная анонимность",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
         
-    async def process_device_selection(self, callback: types.CallbackQuery, state: FSMContext):
-        """Обработка выбора количества устройств"""
-        parts = callback.data.split("_")
-        period_id = parts[1]
-        device_count = int(parts[2])
+    async def process_plan_selection(self, callback: types.CallbackQuery, state: FSMContext):
+        """Обработка выбора тарифа"""
+        plan_id = callback.data.split("_")[1]
+        plan = VPN_PLANS.get(plan_id)
         
-        period = BASE_PLANS.get(period_id)
-        device_plan = DEVICE_PLANS.get(device_count)
-        
-        if not period or not device_plan:
-            await callback.answer("❌ Неверные параметры")
+        if not plan:
+            await callback.answer("❌ Неверный тариф")
             return
-            
-        total_price = calculate_price(period_id, device_count)
-        plan_id = f"{period_id}_{device_count}dev"
-            
-        await state.update_data(
-            period_id=period_id,
-            device_count=device_count,
-            plan_id=plan_id
-        )
             
         # Создание платежа в ЮKassa
         payment = await self.create_payment(
-            total_price, 
-            f"VPN {period['name']} ({device_plan['name']})",
+            plan["price"], 
+            f"VPN {plan['name']}",
             callback.from_user.id
         )
         
@@ -330,7 +286,7 @@ class VPNBot:
                 user_id=callback.from_user.id,
                 plan_id=plan_id,
                 payment_id=payment.id,
-                amount=total_price
+                amount=plan["price"]
             )
             
             await state.update_data(
@@ -340,8 +296,6 @@ class VPNBot:
                 order_id=order_id
             )
             await state.set_state(OrderStates.waiting_payment)
-            
-
             
             keyboard = InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(
@@ -359,13 +313,10 @@ class VPNBot:
             ])
             
             await callback.message.edit_text(
-                f"💰 <b>К оплате:</b> {total_price}₽\n"
-                f"📅 <b>Период:</b> {period['name']}\n"
-                f"📱 <b>Устройств:</b> {device_plan['name']}\n"
-                f"⏰ <b>Срок:</b> {period['days']} дней\n"
+                f"💰 <b>К оплате:</b> {plan['price']}₽\n"
+                f"📦 <b>Тариф:</b> {plan['name']}\n"
+                f"⏰ <b>Срок:</b> {plan['days']} дней\n"
                 f"🔥 <b>Трафик:</b> безлимитный\n\n"
-                f"💳 Базовая цена: {period['base_price']}₽\n"
-                f"📱 Доплата за устройства: +{device_plan['extra_price']}₽\n\n"
                 "Нажмите кнопку для оплаты:",
                 reply_markup=keyboard,
                 parse_mode="HTML"
@@ -416,12 +367,10 @@ class VPNBot:
                 db.update_order_status(payment_id, "paid")
                 
                 # Обрабатываем реферальную выплату
-                period_id = data.get("period_id")
-                await self.process_referral_payment(user_id, order_id, period_id)
+                await self.process_referral_payment(user_id, order_id, plan_id)
                 
                 # Создаем VPN ключ
-                device_count = data.get("device_count", 1)
-                vpn_result = await self.create_vpn_client(user_id, period_id, device_count, callback.from_user.username)
+                vpn_result = await self.create_vpn_client(user_id, plan_id, callback.from_user.username)
                 
                 if vpn_result:
                     vpn_config, email, expires_at = vpn_result
@@ -433,8 +382,7 @@ class VPNBot:
                         email=email,
                         config=vpn_config,
                         expires_at=expires_at,
-                        traffic_limit=0,  # Безлимитный
-                        device_limit=device_count
+                        traffic_limit=0
                     )
                     
                     success_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -481,13 +429,9 @@ class VPNBot:
             logger.error(f"Ошибка проверки платежа {payment_id}: {e}")
             await callback.answer("❌ Ошибка проверки платежа")
             
-    async def create_vpn_client(self, user_id: int, period_id: str, device_count: int, username: str = None) -> Optional[tuple]:
+    async def create_vpn_client(self, user_id: int, plan_id: str, username: str = None) -> Optional[tuple]:
         """Создание VPN клиента через Xray API"""
-        period = BASE_PLANS[period_id]
-        plan = {
-            "days": period["days"],
-            "device_limit": device_count
-        }
+        plan = VPN_PLANS[plan_id]
         
         # Используем username или генерируем ID
         if username:
@@ -496,7 +440,7 @@ class VPNBot:
             email = f"user_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
         async with XrayManager(XRAY_API_URL) as xray:
-            result = await xray.add_client(email, plan)
+            result = await xray.add_client(email, {"days": plan["days"]})
             
             if result:
                 return (result["config"], result["email"], result["expires_at"])
@@ -566,7 +510,6 @@ class VPNBot:
         await callback.message.edit_text(
             f"🔑 <b>VPN Ключ:</b> {key['email']}\n\n"
             f"📅 <b>Истекает:</b> {expires_at.strftime('%d.%m.%Y %H:%M')}\n"
-            f"📱 <b>Лимит устройств:</b> {key.get('device_limit', 1)}\n"
             f"🔥 <b>Трафик:</b> безлимитный\n"
             f"🔘 <b>Статус:</b> {status}\n\n"
             f"🔑 <b>Конфигурация:</b>\n"
@@ -617,10 +560,9 @@ class VPNBot:
         stats = db.get_stats()
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🎁 Подарить ключ", callback_data="admin_gift_key")],
+            [InlineKeyboardButton(text="🎁 Создать подарочную ссылку", callback_data="admin_gift_link")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
-            [InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")],
-            [InlineKeyboardButton(text="🔑 VPN ключи", callback_data="admin_keys")],
-            [InlineKeyboardButton(text="💰 Платежи", callback_data="admin_payments")],
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
         ])
         
@@ -634,24 +576,24 @@ class VPNBot:
         
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
         
-    async def process_referral_payment(self, user_id: int, order_id: int, period_id: str):
+    async def process_referral_payment(self, user_id: int, order_id: int, plan_id: str):
         """Обработка реферальной выплаты"""
         referrer_id = db.get_referrer(user_id)
         if not referrer_id:
             return
             
-        bonus_amount = REFERRAL_RATES.get(period_id, 0)
+        bonus_amount = REFERRAL_RATES.get(plan_id, 0)
         if bonus_amount > 0:
             # Добавляем выплату
-            db.add_referral_earning(referrer_id, user_id, order_id, period_id, bonus_amount)
+            db.add_referral_earning(referrer_id, user_id, order_id, plan_id, bonus_amount)
             
             # Уведомляем реферера
             try:
-                period_name = BASE_PLANS[period_id]["name"]
+                plan_name = VPN_PLANS[plan_id]["name"]
                 await self.bot.send_message(
                     referrer_id,
                     f"🎉 Ваш реферал купил подписку!\n"
-                    f"📅 Период: {period_name}\n"
+                    f"📅 Период: {plan_name}\n"
                     f"💰 Ваш бонус: {bonus_amount}₽"
                 )
             except:
@@ -663,25 +605,14 @@ class VPNBot:
         if state:
             await state.clear()
         
-        # Основные кнопки
         keyboard_buttons = [
-            [InlineKeyboardButton(
-                text=f"{period['name']} - от {period['base_price']}₽", 
-                callback_data=f"period_{period_id}"
-            )]
-            for period_id, period in BASE_PLANS.items()
-        ]
-        
-        keyboard_buttons.extend([
+            [InlineKeyboardButton(text="💳 Купить VPN", callback_data="buy_vpn")],
             [InlineKeyboardButton(text="👤 Мои ключи", callback_data="my_keys")],
             [InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals")]
-        ])
+        ]
         
-        # Кнопка админ-панели для админов
         if callback.from_user.id in ADMIN_IDS:
-            keyboard_buttons.append([
-                InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel")
-            ])
+            keyboard_buttons.append([InlineKeyboardButton(text="⚙️ Админ-панель", callback_data="admin_panel")])
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
         
@@ -690,64 +621,164 @@ class VPNBot:
             "🔐 Быстрый и надежный VPN\n"
             "⚡ Безлимитный трафик\n"
             "🔒 Максимальная безопасность\n\n"
-            "📅 <b>Шаг 1:</b> Выберите срок подписки:",
+            "Используйте кнопки ниже для навигации:",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
-                
-    def generate_config(self, inbound: Dict[str, Any], client: Dict[str, Any]) -> str:
-        """Генерация конфигурации для клиента"""
+    async def admin_gift_key(self, callback: types.CallbackQuery, state: FSMContext):
+        """Начало процесса подарка ключа"""
+        if callback.from_user.id not in ADMIN_IDS:
+            await callback.answer("❌ Доступ запрещен")
+            return
+            
+        await state.set_state(AdminStates.waiting_gift_user_id)
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_panel")]
+        ])
+        
+        await callback.message.edit_text(
+            "🎁 <b>Подарок ключа</b>\n\n"
+            "Введите Telegram ID пользователя:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
+    async def process_gift_user_id(self, message: types.Message, state: FSMContext):
+        """Обработка ID пользователя для подарка"""
         try:
-            settings = json.loads(inbound.get("settings", "{}"))
-            stream_settings = json.loads(inbound.get("streamSettings", "{}"))
+            user_id = int(message.text)
+            await state.update_data(gift_user_id=user_id)
+            await state.set_state(AdminStates.waiting_gift_days)
             
-            # Определяем параметры подключения
-            address = inbound.get("listen", "0.0.0.0")
-            if address in ["0.0.0.0", "::", ""]:
-                address = "YOUR_SERVER_IP"  # Замените на IP вашего сервера
-                
-            port = inbound["port"]
-            protocol = inbound["protocol"]
+            await message.answer(
+                f"🎁 <b>Подарок для пользователя {user_id}</b>\n\n"
+                "Введите количество дней подписки:",
+                parse_mode="HTML"
+            )
+        except ValueError:
+            await message.answer("❌ Неверный ID. Введите число.")
             
-            if protocol == "vless":
-                # Генерируем VLESS конфигурацию
-                network = stream_settings.get("network", "tcp")
-                security = stream_settings.get("security", "none")
+    async def process_gift_days(self, message: types.Message, state: FSMContext):
+        """Обработка количества дней для подарка"""
+        try:
+            days = int(message.text)
+            if days <= 0:
+                await message.answer("❌ Количество дней должно быть больше 0.")
+                return
                 
-                config = (
-                    f"vless://{client['id']}@{address}:{port}"
-                    f"?type={network}&security={security}"
-                    f"#{client['email']}"
+            data = await state.get_data()
+            user_id = data['gift_user_id']
+            
+            vpn_result = await self.create_gift_vpn_client(user_id, days)
+            
+            if vpn_result:
+                vpn_config, email, expires_at = vpn_result
+                
+                db.add_vpn_key(
+                    user_id=user_id,
+                    order_id=None,
+                    email=email,
+                    config=vpn_config,
+                    expires_at=expires_at,
+                    traffic_limit=0
                 )
                 
-            elif protocol == "vmess":
-                # Генерируем VMess конфигурацию
-                vmess_config = {
-                    "v": "2",
-                    "ps": client["email"],
-                    "add": address,
-                    "port": str(port),
-                    "id": client["id"],
-                    "aid": str(settings.get("alterId", 0)),
-                    "net": stream_settings.get("network", "tcp"),
-                    "type": "none",
-                    "host": "",
-                    "path": "",
-                    "tls": stream_settings.get("security", "none")
-                }
-                
-                config_json = json.dumps(vmess_config, separators=(',', ':'))
-                config = "vmess://" + base64.b64encode(config_json.encode()).decode()
-                
+                try:
+                    await self.bot.send_message(
+                        user_id,
+                        f"🎁 <b>Подарок от администрации!</b>\n\n"
+                        f"🔑 <b>Ваш VPN ключ:</b>\n"
+                        f"<code>{vpn_config}</code>\n\n"
+                        f"⏰ <b>Действует до:</b> {expires_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+                        "📱 Используйте /help для инструкции по подключению",
+                        parse_mode="HTML"
+                    )
+                    
+                    await message.answer(
+                        f"✅ <b>Подарок отправлен!</b>\n\n"
+                        f"👤 Пользователь: {user_id}\n"
+                        f"⏰ Период: {days} дней",
+                        parse_mode="HTML"
+                    )
+                except Exception as e:
+                    await message.answer(
+                        f"❌ Ошибка отправки пользователю {user_id}: {e}\n\n"
+                        f"🔑 <b>Ключ создан:</b>\n"
+                        f"<code>{vpn_config}</code>",
+                        parse_mode="HTML"
+                    )
             else:
-                config = f"Протокол {protocol} не поддерживается"
+                await message.answer("❌ Ошибка создания VPN ключа")
                 
-            return config
+            await state.clear()
             
-        except Exception as e:
-            logger.error(f"Ошибка генерации конфигурации: {e}")
-            return "Ошибка генерации конфигурации"
+        except ValueError:
+            await message.answer("❌ Неверное количество дней. Введите число.")
             
+    async def admin_gift_link(self, callback: types.CallbackQuery, state: FSMContext):
+        """Начало создания подарочной ссылки"""
+        if callback.from_user.id not in ADMIN_IDS:
+            await callback.answer("❌ Доступ запрещен")
+            return
+            
+        await state.set_state(AdminStates.waiting_gift_link_days)
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_panel")]
+        ])
+        
+        await callback.message.edit_text(
+            "🎁 <b>Подарочная ссылка</b>\n\n"
+            "Введите количество дней подписки:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
+    async def process_gift_link_days(self, message: types.Message, state: FSMContext):
+        """Обработка создания подарочной ссылки"""
+        try:
+            days = int(message.text)
+            if days <= 0:
+                await message.answer("❌ Количество дней должно быть больше 0.")
+                return
+                
+            gift_code = f"gift_{uuid.uuid4().hex[:8]}"
+            
+            # Сохраняем в БД
+            if db.create_gift_link(gift_code, days):
+                bot_username = (await self.bot.get_me()).username
+                gift_link = f"https://t.me/{bot_username}?start={gift_code}"
+                
+                await message.answer(
+                    f"✅ <b>Подарочная ссылка создана!</b>\n\n"
+                    f"🎁 <b>Период:</b> {days} дней\n"
+                    f"🔗 <b>Ссылка:</b>\n"
+                    f"<code>{gift_link}</code>\n\n"
+                    f"📝 <b>Код:</b> <code>{gift_code}</code>",
+                    parse_mode="HTML"
+                )
+            else:
+                await message.answer("❌ Ошибка создания подарочной ссылки")
+            
+            await state.clear()
+            
+        except ValueError:
+            await message.answer("❌ Неверное количество дней. Введите число.")
+            
+    async def create_gift_vpn_client(self, user_id: int, days: int) -> Optional[tuple]:
+        """Создание подарочного VPN клиента"""
+        email = f"gift_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        async with XrayManager(XRAY_API_URL) as xray:
+            result = await xray.add_client(email, {"days": days})
+            
+            if result:
+                return (result["config"], result["email"], result["expires_at"])
+            else:
+                logger.error(f"Не удалось создать подарочный VPN клиента для {email}")
+                return None
+                
     async def start_polling(self):
         """Запуск бота"""
         logger.info("Запуск VPN бота...")
