@@ -2,8 +2,13 @@ version: '3.8'
 
 services:
   xray-api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.simple
     container_name: xray-vpn
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     ports:
       - "8080:8080"  # API порт
       - "443:443"    # VPN порт

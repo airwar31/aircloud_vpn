@@ -1,11 +1,17 @@
 FROM python:3.11-slim
 
-# Установка системных зависимостей
-RUN apt-get update && apt-get install -y \
+# Настройка DNS для исправления проблем с резолвингом
+RUN echo 'nameserver 8.8.8.8' > /etc/resolv.conf
+
+# Установка системных зависимостей с альтернативными зеркалами
+RUN apt-get update --fix-missing || true && \
+    apt-get install -y --no-install-recommends \
     wget \
     unzip \
     procps \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* || true
 
 # Установка Xray
 RUN wget -O xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip \
