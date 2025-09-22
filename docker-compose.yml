@@ -53,6 +53,23 @@ services:
     restart: unless-stopped
     networks:
       - vpn-network
+      
+  cleanup-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.cleanup
+    container_name: cleanup-service
+    env_file:
+      - .env
+    environment:
+      - XRAY_API_URL=http://xray-api:8080
+    volumes:
+      - ./bot-data:/app/data
+    depends_on:
+      - xray-api
+    restart: unless-stopped
+    networks:
+      - vpn-network
 
 networks:
   vpn-network:

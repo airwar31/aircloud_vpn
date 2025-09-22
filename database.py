@@ -357,6 +357,36 @@ class Database:
             logger.error(f"Ошибка получения статистики: {e}")
             return {}
             
+    def get_expired_vpn_keys(self) -> List[Dict[str, Any]]:
+        """Получение истекших VPN ключей"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, email, expires_at FROM vpn_keys 
+                    WHERE expires_at < datetime('now') AND is_active = 1
+                """)
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения истекших ключей: {e}")
+            return []
+            
+    def mark_key_as_deleted(self, key_id: int) -> bool:
+        """Пометить ключ как удаленный"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE vpn_keys SET is_active = 0 WHERE id = ?",
+                    (key_id,)
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка пометки ключа как удаленного: {e}")
+            return False
+            
     def get_all_users(self) -> List[Dict[str, Any]]:
         """Получение всех пользователей"""
         try:

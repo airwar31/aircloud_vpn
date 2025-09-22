@@ -1,0 +1,19 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY cleanup_expired.py .
+COPY database.py .
+COPY xray_manager.py .
+COPY config.py .
+
+# Установка cron
+RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
+
+# Добавление задачи cron (каждые 10 минут)
+RUN echo "*/10 * * * * cd /app && python cleanup_expired.py >> /var/log/cleanup.log 2>&1" | crontab -
+
+CMD ["sh", "-c", "cron && tail -f /var/log/cleanup.log"]
