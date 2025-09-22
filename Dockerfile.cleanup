@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
 RUN touch /var/log/cleanup.log
 
 # Добавление задачи cron (каждые 2 минуты для теста)
-RUN echo "*/2 * * * * cd /app && python cleanup_expired.py >> /var/log/cleanup.log 2>&1" | crontab -
+RUN echo "*/2 * * * * cd /app && /usr/local/bin/python cleanup_expired.py >> /var/log/cleanup.log 2>&1" | crontab -
 
 # Запуск cron и показ логов
-CMD ["sh", "-c", "cron && python cleanup_expired.py && tail -f /var/log/cleanup.log"]
+CMD ["sh", "-c", "cron && /usr/local/bin/python cleanup_expired.py && tail -f /var/log/cleanup.log"]
