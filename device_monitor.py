@@ -61,6 +61,11 @@ class DeviceMonitor:
         """Проверка лимитов устройств"""
         connections = await self.get_xray_stats()
         
+        # Если нет данных - не блокируем
+        if not connections:
+            logger.info("Нет данных о подключениях, пропускаем проверку")
+            return
+        
         for email, active_devices in connections.items():
             # Получаем информацию о клиенте из БД
             vpn_keys = db.get_user_vpn_keys_by_email(email)
@@ -75,7 +80,8 @@ class DeviceMonitor:
             
             if active_devices > allowed_devices:
                 await self.send_warning(user_id, email, active_devices, allowed_devices)
-                await self.block_user_if_needed(user_id, email, active_devices, allowed_devices)
+                # Отключаем блокировку пока не настроим реальный мониторинг
+                # await self.block_user_if_needed(user_id, email, active_devices, allowed_devices)
             else:
                 await self.unblock_user_if_needed(user_id, email)
                 
@@ -196,7 +202,7 @@ class DeviceMonitor:
         while True:
             try:
                 await self.check_device_limits()
-                await asyncio.sleep(300)  # Проверка каждые 5 минут
+                await asyncio.sleep(600)  # Проверка каждые 10 минут
             except Exception as e:
                 logger.error(f"Ошибка в цикле мониторинга: {e}")
                 await asyncio.sleep(60)
