@@ -89,15 +89,21 @@ class XrayAPI:
     def add_client(self, email: str, client_id: str, expires_at: str, devices: int = 1) -> str:
         """Добавление клиента"""
         try:
+            # Удаляем старые клиенты с таким же email
+            clients = self.config["inbounds"][0]["settings"]["clients"]
+            self.config["inbounds"][0]["settings"]["clients"] = [
+                c for c in clients if c["email"] != email
+            ]
+            
             client = {
                 "id": client_id,
                 "email": email,
                 "enable": True,
                 "flow": "xtls-rprx-vision",
-                "limitIp": devices  # Ограничение устройств
+                "limitIp": devices
             }
             
-            # Добавляем клиента в конфигурацию
+            # Добавляем нового клиента
             self.config["inbounds"][0]["settings"]["clients"].append(client)
             
             # Сохраняем информацию о клиенте
@@ -140,7 +146,7 @@ class XrayAPI:
             
     def generate_client_config(self, client_id: str, email: str) -> str:
         """Генерация конфигурации для клиента с Reality"""
-        server_ip = os.getenv("SERVER_IP", "YOUR_SERVER_IP")
+        server_ip = os.getenv("SERVER_IP", "5.129.236.103")
         port = self.config["inbounds"][0]["port"]
         
         # VLESS конфигурация с Reality
