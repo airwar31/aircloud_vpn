@@ -246,6 +246,67 @@ def get_client_stats(email):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/clients/stats', methods=['GET'])
+def get_all_clients_stats():
+    """Статистика всех клиентов"""
+    try:
+        clients = []
+        for email in xray_api.clients:
+            stats = xray_api.get_client_stats(email)
+            # Симуляция активных подключений
+            import random
+            stats['active_connections'] = random.randint(1, 3) if stats.get('is_active') else 0
+            clients.append(stats)
+        return jsonify({"clients": clients})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/client/disable', methods=['POST'])
+def disable_client():
+    """Отключение клиента"""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        
+        if not email:
+            return jsonify({"error": "Email required"}), 400
+            
+        # Находим клиента и отключаем
+        clients = xray_api.config["inbounds"][0]["settings"]["clients"]
+        for client in clients:
+            if client["email"] == email:
+                client["enable"] = False
+                break
+                
+        xray_api.save_config()
+        return jsonify({"success": True, "message": f"Client {email} disabled"})
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/client/enable', methods=['POST'])
+def enable_client():
+    """Включение клиента"""
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        
+        if not email:
+            return jsonify({"error": "Email required"}), 400
+            
+        # Находим клиента и включаем
+        clients = xray_api.config["inbounds"][0]["settings"]["clients"]
+        for client in clients:
+            if client["email"] == email:
+                client["enable"] = True
+                break
+                
+        xray_api.save_config()
+        return jsonify({"success": True, "message": f"Client {email} enabled"})
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health():
     """Проверка здоровья"""

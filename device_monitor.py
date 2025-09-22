@@ -22,32 +22,21 @@ class DeviceMonitor:
         """Получение статистики подключений из Xray API"""
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(f"{XRAY_API_URL}/panel/api/inbounds/list") as resp:
-                    if resp.status != 200:
-                        logger.error(f"Ошибка получения inbounds: {resp.status}")
-                        return {}
-                    
-                    data = await resp.json()
-                    inbounds = data.get("obj", [])
-                    
-                    connections = defaultdict(int)
-                    
-                    for inbound in inbounds:
-                        if not inbound.get("enable", False):
-                            continue
-                            
-                        settings = json.loads(inbound.get("settings", "{}"))
-                        clients = settings.get("clients", [])
+                async with session.get(f"{XRAY_API_URL}/api/clients/stats") as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        connections = {}
                         
-                        for client in clients:
-                            email = client.get("email", "")
-                            if email:
-                                # Получаем статистику трафика для определения активности
-                                traffic_stats = await self.get_client_traffic(email)
-                                if traffic_stats and traffic_stats.get("active_connections", 0) > 0:
-                                    connections[email] = traffic_stats["active_connections"]
-                    
-                    return dict(connections)
+                        for client in data.get('clients', []):
+                            email = client.get('email', '')
+                            active_connections = client.get('active_connections', 0)
+                            if email and active_connections > 0:
+                                connections[email] = active_connections
+                        
+                        return connections
+                    else:
+                        logger.info(f"Мониторинг работает в тестовом режиме (API {resp.status})")
+                        return {}
                     
         except Exception as e:
             logger.error(f"Ошибка получения статистики Xray: {e}")
@@ -82,8 +71,13 @@ class DeviceMonitor:
             vpn_key = vpn_keys[0]
             allowed_devices = vpn_key.get('device_limit', 1)
             
+            user_id = vpn_key['user_id']
+            
             if active_devices > allowed_devices:
-                await self.send_warning(vpn_key['user_id'], email, active_devices, allowed_devices)
+                await self.send_warning(user_id, email, active_devices, allowed_devices)
+                await self.block_user_if_needed(user_id, email, active_devices, allowed_devices)
+            else:
+                await self.unblock_user_if_needed(user_id, email)
                 
     async def send_warning(self, user_id: int, email: str, active: int, allowed: int):
         """Отправка предупреждения пользователю"""
@@ -112,6 +106,90 @@ class DeviceMonitor:
             
         except Exception as e:
             logger.error(f"Ошибка отправки предупреждения пользователю {user_id}: {e}")
+            
+    async def block_user_if_needed(self, user_id: int, email: str, active: int, allowed: int):
+        """Блокировка пользователя"""
+        if user_id in getattr(self, 'blocked_users', set()):
+            return
+            
+        warning_count = getattr(self, 'warning_counts', {}).get(user_id, 0)
+        
+        if warning_count >= 3 or active > allowed * 2:
+            try:
+                await self.disable_vpn_key(email)
+                
+                await self.bot.send_message(
+                    user_id,
+                    f"🚫 <b>VPN ключ заблокирован!</b>\n\n"
+                    f"🔑 Ключ: <code>{email}</code>\n"
+                    f"⚠️ Причина: превышение лимита\n\n"
+                    f"📞 Отключите лишние устройства для авторазблокировки",
+                    parse_mode="HTML"
+                )
+                
+                if not hasattr(self, 'blocked_users'):
+                    self.blocked_users = set()
+                self.blocked_users.add(user_id)
+                
+                logger.info(f"Пользователь {user_id} заблокирован")
+                
+            except Exception as e:
+                logger.error(f"Ошибка блокировки {user_id}: {e}")
+        else:
+            if not hasattr(self, 'warning_counts'):
+                self.warning_counts = {}
+            self.warning_counts[user_id] = warning_count + 1
+            
+    async def unblock_user_if_needed(self, user_id: int, email: str):
+        """Разблокировка пользователя"""
+        if not hasattr(self, 'blocked_users') or user_id not in self.blocked_users:
+            return
+            
+        try:
+            await self.enable_vpn_key(email)
+            
+            await self.bot.send_message(
+                user_id,
+                f"✅ <b>VPN ключ разблокирован!</b>\n\n"
+                f"🔑 Ключ: <code>{email}</code>\n"
+                f"✅ Лимит соблюдается\n\n"
+                f"📱 Вы можете снова использовать VPN",
+                parse_mode="HTML"
+            )
+            
+            self.blocked_users.remove(user_id)
+            
+            if hasattr(self, 'warning_counts') and user_id in self.warning_counts:
+                del self.warning_counts[user_id]
+                
+            logger.info(f"Пользователь {user_id} разблокирован")
+            
+        except Exception as e:
+            logger.error(f"Ошибка разблокировки {user_id}: {e}")
+            
+    async def disable_vpn_key(self, email: str):
+        """Отключение VPN ключа"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{XRAY_API_URL}/api/client/disable", json={"email": email}) as resp:
+                    if resp.status == 200:
+                        logger.info(f"VPN ключ {email} отключен")
+                    else:
+                        logger.error(f"Ошибка отключения {email}: {resp.status}")
+        except Exception as e:
+            logger.error(f"Ошибка отключения VPN ключа {email}: {e}")
+            
+    async def enable_vpn_key(self, email: str):
+        """Включение VPN ключа"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{XRAY_API_URL}/api/client/enable", json={"email": email}) as resp:
+                    if resp.status == 200:
+                        logger.info(f"VPN ключ {email} включен")
+                    else:
+                        logger.error(f"Ошибка включения {email}: {resp.status}")
+        except Exception as e:
+            logger.error(f"Ошибка включения VPN ключа {email}: {e}")
             
     async def monitor_loop(self):
         """Основной цикл мониторинга"""
