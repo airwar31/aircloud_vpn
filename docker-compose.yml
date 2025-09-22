@@ -4,7 +4,7 @@ services:
   xray-api:
     build:
       context: .
-      dockerfile: Dockerfile.simple
+      dockerfile: Dockerfile.ubuntu
     container_name: xray-vpn
     dns:
       - 8.8.8.8
