@@ -409,13 +409,15 @@ class VPNBot:
                         key_data = db.extend_vpn_key(extend_key_id, VPN_PLANS[plan_id]["days"])
                         if key_data:
                             async with XrayManager(XRAY_API_URL) as xray:
-                                # Проверяем, активен ли ключ на сервере
-                                if key_data['is_active'] == 1:
-                                    # Ключ активен - продлеваем через extend_client
-                                    current_expires = datetime.fromisoformat(key_data['expires_at'].replace('Z', '+00:00'))
+                                # Проверяем, активен ли ключ и не истек ли он
+                                current_expires = datetime.fromisoformat(key_data['expires_at'].replace('Z', '+00:00'))
+                                is_active_and_valid = key_data['is_active'] == 1 and current_expires > datetime.now()
+                                
+                                if is_active_and_valid:
+                                    # Ключ активен и не истек - продлеваем через extend_client
                                     await xray.extend_client(key_data['email'], current_expires, VPN_PLANS[plan_id]["days"])
                                 else:
-                                    # Ключ неактивен - восстанавливаем через restore_client
+                                    # Ключ неактивен или истек - восстанавливаем через restore_client
                                     await xray.restore_client(key_data['email'], key_data['config'], VPN_PLANS[plan_id]["days"])
                             success_text = "✅ <b>Ключ успешно продлен!</b>"
                         else:
