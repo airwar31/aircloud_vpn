@@ -57,6 +57,68 @@ class XrayManager:
             logger.error(f"Ошибка добавления клиента: {e}")
             return None
             
+    async def restore_client(self, email: str, config: str, days: int) -> bool:
+        """Восстановление существующего клиента"""
+        try:
+            # Извлекаем UUID из конфигурации
+            import re
+            uuid_match = re.search(r'vless://([^@]+)@', config)
+            if not uuid_match:
+                logger.error(f"Не удалось извлечь UUID из конфигурации")
+                return False
+                
+            client_id = uuid_match.group(1)
+            expires_at = datetime.now() + timedelta(days=days)
+            
+            client_data = {
+                "email": email,
+                "id": client_id,  # Используем существующий UUID
+                "expires_at": expires_at.isoformat(),
+                "enable": True,
+                "devices": 1
+            }
+            
+            async with self.session.post(
+                f"{self.api_url}/api/clients",
+                json=client_data
+            ) as resp:
+                if resp.status == 200:
+                    logger.info(f"Клиент {email} восстановлен в Xray")
+                    return True
+                else:
+                    logger.error(f"Ошибка восстановления клиента: {resp.status}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Ошибка восстановления клиента: {e}")
+            return False
+            
+    async def extend_client(self, email: str, current_expires_at: datetime, days: int) -> bool:
+        """Продление срока действия существующего клиента"""
+        try:
+            # Добавляем дни к существующей дате истечения
+            new_expires_at = current_expires_at + timedelta(days=days)
+            
+            update_data = {
+                "expires_at": new_expires_at.isoformat(),
+                "enable": True
+            }
+            
+            async with self.session.put(
+                f"{self.api_url}/api/clients/{email}",
+                json=update_data
+            ) as resp:
+                if resp.status == 200:
+                    logger.info(f"Клиент {email} продлен в Xray до {new_expires_at}")
+                    return True
+                else:
+                    logger.error(f"Ошибка продления клиента: {resp.status}")
+                    return False
+                    
+        except Exception as e:
+            logger.error(f"Ошибка продления клиента: {e}")
+            return False
+            
     async def remove_client(self, email: str) -> bool:
         """Удаление клиента"""
         try:

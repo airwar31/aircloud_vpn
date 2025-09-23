@@ -462,26 +462,47 @@ class Database:
             logger.error(f"Ошибка скрытия ключа: {e}")
             return False
             
-    def extend_vpn_key(self, key_id: int, days: int) -> bool:
+    def extend_vpn_key(self, key_id: int, days: int) -> Optional[Dict[str, Any]]:
         """Продление VPN ключа"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE vpn_keys 
-                    SET expires_at = datetime(expires_at, '+{} days'),
-                        is_active = 1
-                    WHERE id = ?
-                """.format(days), (key_id,))
+                
+                # Получаем данные ключа
+                cursor.execute("SELECT * FROM vpn_keys WHERE id = ?", (key_id,))
+                key = cursor.fetchone()
+                if not key:
+                    return None
+                
+                # Проверяем, активен ли ключ и не истек ли он
+                expires_at = datetime.fromisoformat(key['expires_at'].replace('Z', '+00:00'))
+                is_active_and_valid = key['is_active'] == 1 and expires_at > datetime.now()
+                
+                if is_active_and_valid:
+                    # Активный ключ - добавляем дни к текущей дате истечения
+                    cursor.execute("""
+                        UPDATE vpn_keys 
+                        SET expires_at = datetime(expires_at, '+{} days')
+                        WHERE id = ?
+                    """.format(days), (key_id,))
+                else:
+                    # Неактивный или истекший ключ - считаем от текущего времени
+                    cursor.execute("""
+                        UPDATE vpn_keys 
+                        SET expires_at = datetime('now', '+{} days'),
+                            is_active = 1
+                        WHERE id = ?
+                    """.format(days), (key_id,))
+                    
                 conn.commit()
                 
                 if cursor.rowcount > 0:
                     logger.info(f"VPN ключ {key_id} продлен на {days} дней")
-                    return True
-                return False
+                    return dict(key)
+                return None
         except Exception as e:
             logger.error(f"Ошибка продления ключа: {e}")
-            return False
+            return None
             
     def get_all_users(self) -> List[Dict[str, Any]]:
         """Получение всех пользователей"""

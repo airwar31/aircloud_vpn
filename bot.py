@@ -406,7 +406,17 @@ class VPNBot:
                     
                     if extend_key_id:
                         # Продление существующего ключа
-                        if db.extend_vpn_key(extend_key_id, VPN_PLANS[plan_id]["days"]):
+                        key_data = db.extend_vpn_key(extend_key_id, VPN_PLANS[plan_id]["days"])
+                        if key_data:
+                            async with XrayManager(XRAY_API_URL) as xray:
+                                # Проверяем, активен ли ключ на сервере
+                                if key_data['is_active'] == 1:
+                                    # Ключ активен - продлеваем через extend_client
+                                    current_expires = datetime.fromisoformat(key_data['expires_at'].replace('Z', '+00:00'))
+                                    await xray.extend_client(key_data['email'], current_expires, VPN_PLANS[plan_id]["days"])
+                                else:
+                                    # Ключ неактивен - восстанавливаем через restore_client
+                                    await xray.restore_client(key_data['email'], key_data['config'], VPN_PLANS[plan_id]["days"])
                             success_text = "✅ <b>Ключ успешно продлен!</b>"
                         else:
                             success_text = "❌ Ошибка продления"
@@ -567,8 +577,9 @@ class VPNBot:
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
             ]
         elif is_active:
-            # Активный ключ - только навигация
+            # Активный ключ - продлить или навигация
             buttons = [
+                [InlineKeyboardButton(text="🔄 Продлить", callback_data=f"extend_{key_id}")],
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data="my_keys")],
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
             ]
