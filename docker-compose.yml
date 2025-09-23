@@ -46,7 +46,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./bot-data:/app/data
+      - ./bot-data:/shared
     depends_on:
       - xray-api
       - vpn-bot

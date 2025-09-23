@@ -9,7 +9,7 @@ from xray_manager import XrayManager
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-XRAY_API_URL = os.getenv("XRAY_API_URL", "http://localhost:8080")
+XRAY_API_URL = os.getenv("XRAY_API_URL", "http://xray-api:8080")
 
 async def cleanup_expired_keys():
     """Удаление истекших VPN ключей"""
