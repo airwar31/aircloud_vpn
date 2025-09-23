@@ -70,6 +70,21 @@ services:
     restart: unless-stopped
     networks:
       - vpn-network
+      
+  notify-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.notify
+    container_name: notify-service
+    env_file:
+      - .env
+    volumes:
+      - ./bot-data:/shared
+    depends_on:
+      - vpn-bot
+    restart: unless-stopped
+    networks:
+      - vpn-network
 
 networks:
   vpn-network:

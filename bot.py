@@ -58,6 +58,10 @@ class VPNBot:
             F.data.startswith("plan_")
         )
         self.dp.callback_query.register(
+            self.process_extend_plan, 
+            F.data.startswith("extend_plan_")
+        )
+        self.dp.callback_query.register(
             self.process_payment_check, 
             F.data.startswith("check_")
         )
@@ -104,6 +108,14 @@ class VPNBot:
         self.dp.callback_query.register(
             self.admin_expire_all,
             F.data == "admin_expire_all"
+        )
+        self.dp.callback_query.register(
+            self.extend_key,
+            F.data.startswith("extend_")
+        )
+        self.dp.callback_query.register(
+            self.delete_key,
+            F.data.startswith("delete_")
         )
         
     async def cmd_start(self, message: types.Message):
@@ -389,15 +401,26 @@ class VPNBot:
                 if vpn_result:
                     vpn_config, email, expires_at = vpn_result
                     
-                    # Сохраняем VPN ключ в БД
-                    db.add_vpn_key(
-                        user_id=user_id,
-                        order_id=order_id,
-                        email=email,
-                        config=vpn_config,
-                        expires_at=expires_at,
-                        traffic_limit=0
-                    )
+                    # Проверяем, это продление или новый ключ
+                    extend_key_id = data.get("extend_key_id")
+                    
+                    if extend_key_id:
+                        # Продление существующего ключа
+                        if db.extend_vpn_key(extend_key_id, VPN_PLANS[plan_id]["days"]):
+                            success_text = "✅ <b>Ключ успешно продлен!</b>"
+                        else:
+                            success_text = "❌ Ошибка продления"
+                    else:
+                        # Создание нового ключа
+                        db.add_vpn_key(
+                            user_id=user_id,
+                            order_id=order_id,
+                            email=email,
+                            config=vpn_config,
+                            expires_at=expires_at,
+                            traffic_limit=0
+                        )
+                        success_text = "✅ <b>Оплата прошла успешно!</b>"
                     
                     success_keyboard = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(
@@ -414,14 +437,24 @@ class VPNBot:
                         )]
                     ])
                     
-                    await callback.message.edit_text(
-                        "✅ <b>Оплата прошла успешно!</b>\n\n"
-                        f"🔑 <b>Ваш VPN ключ:</b>\n"
-                        f"<code>{vpn_config}</code>\n\n"
-                        "💬 Поддержка: @support",
-                        reply_markup=success_keyboard,
-                        parse_mode="HTML"
-                    )
+                    if extend_key_id:
+                        # Продление - показываем статус
+                        await callback.message.edit_text(
+                            f"{success_text}\n\n"
+                            "💬 Поддержка: @support",
+                            reply_markup=success_keyboard,
+                            parse_mode="HTML"
+                        )
+                    else:
+                        # Новый ключ - показываем конфигурацию
+                        await callback.message.edit_text(
+                            f"{success_text}\n\n"
+                            f"🔑 <b>Ваш VPN ключ:</b>\n"
+                            f"<code>{vpn_config}</code>\n\n"
+                            "💬 Поддержка: @support",
+                            reply_markup=success_keyboard,
+                            parse_mode="HTML"
+                        )
                     await state.clear()
                     logger.info(f"VPN ключ успешно создан для пользователя {user_id}")
                 else:
@@ -514,12 +547,27 @@ class VPNBot:
             return
             
         expires_at = datetime.fromisoformat(key['expires_at'].replace('Z', '+00:00'))
-        status = "✅ Активен" if expires_at > datetime.now() else "❌ Истек"
+        is_active = expires_at > datetime.now()
+        status = "✅ Активен" if is_active else "❌ Истек"
         
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="⬅️ Назад", callback_data="my_keys")],
-            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
-        ])
+        # Кнопки зависят от статуса ключа
+        buttons = []
+        if is_active:
+            # Активный ключ - только навигация
+            buttons = [
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="my_keys")],
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
+            ]
+        else:
+            # Истекший ключ - продлить или удалить
+            buttons = [
+                [InlineKeyboardButton(text="🔄 Продлить", callback_data=f"extend_{key_id}")],
+                [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delete_{key_id}")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="my_keys")],
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
+            ]
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
         
         await callback.message.edit_text(
             f"🔑 <b>VPN Ключ:</b> {key['email']}\n\n"
@@ -830,7 +878,6 @@ class VPNBot:
                 ]),
                 parse_mode="HTML"
             )
-            
         except Exception as e:
             await callback.message.edit_text(
                 f"❌ Ошибка: {e}",
@@ -838,6 +885,107 @@ class VPNBot:
                     [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_panel")]
                 ])
             )
+            
+    async def extend_key(self, callback: types.CallbackQuery):
+        """Продление ключа - показ тарифов"""
+        key_id = int(callback.data.split("_")[1])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f"{plan['name']} - {plan['price']}₽", 
+                callback_data=f"extend_plan_{key_id}_{plan_id}"
+            )]
+            for plan_id, plan in VPN_PLANS.items()
+        ] + [
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"key_{key_id}")]
+        ])
+        
+        await callback.message.edit_text(
+            "🔄 <b>Продление ключа</b>\n\n"
+            "📅 Выберите период продления:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
+    async def delete_key(self, callback: types.CallbackQuery):
+        """Удаление ключа из профиля"""
+        key_id = int(callback.data.split("_")[1])
+        user_id = callback.from_user.id
+        
+        # Помечаем ключ как удаленный
+        if db.mark_key_as_deleted(key_id):
+            await callback.message.edit_text(
+                "✅ <b>Ключ удален из вашего профиля</b>",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="👍 Ок", callback_data="my_keys")]
+                ]),
+                parse_mode="HTML"
+            )
+        else:
+            await callback.answer("❌ Ошибка удаления")
+            
+    async def process_extend_plan(self, callback: types.CallbackQuery, state: FSMContext):
+        """Обработка выбора тарифа для продления"""
+        parts = callback.data.split("_")
+        key_id = int(parts[2])
+        plan_id = parts[3]
+        plan = VPN_PLANS.get(plan_id)
+        
+        if not plan:
+            await callback.answer("❌ Неверный тариф")
+            return
+            
+        # Создание платежа для продления
+        payment = await self.create_payment(
+            plan["price"], 
+            f"VPN продление {plan['name']}",
+            callback.from_user.id
+        )
+        
+        if payment:
+            # Создаем заказ на продление
+            order_id = db.create_order(
+                user_id=callback.from_user.id,
+                plan_id=plan_id,
+                payment_id=payment.id,
+                amount=plan["price"]
+            )
+            
+            await state.update_data(
+                plan_id=plan_id,
+                payment_id=payment.id,
+                user_id=callback.from_user.id,
+                order_id=order_id,
+                extend_key_id=key_id  # Для продления
+            )
+            await state.set_state(OrderStates.waiting_payment)
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="💳 Оплатить", 
+                    url=payment.confirmation.confirmation_url
+                )],
+                [InlineKeyboardButton(
+                    text="✅ Проверить оплату", 
+                    callback_data=f"check_{payment.id}"
+                )],
+                [InlineKeyboardButton(
+                    text="⬅️ Назад", 
+                    callback_data=f"key_{key_id}"
+                )]
+            ])
+            
+            await callback.message.edit_text(
+                f"🔄 <b>Продление VPN ключа</b>\n\n"
+                f"💰 <b>К оплате:</b> {plan['price']}₽\n"
+                f"📦 <b>Период:</b> {plan['name']}\n"
+                f"⏰ <b>Срок:</b> {plan['days']} дней\n\n"
+                "Нажмите кнопку для оплаты:",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+        else:
+            await callback.answer("❌ Ошибка создания платежа")
                 
     async def start_polling(self):
         """Запуск бота"""

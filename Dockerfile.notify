@@ -1,0 +1,25 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY notify_expiring.py .
+COPY database.py .
+COPY config.py .
+
+# Создаем директорию для общей БД
+RUN mkdir -p /shared
+
+# Установка cron
+RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
+
+# Создание лог файла
+RUN touch /var/log/notify.log
+
+# Добавление задачи cron (каждые 6 часов)
+RUN echo "0 */6 * * * cd /app && /usr/local/bin/python notify_expiring.py >> /var/log/notify.log 2>&1" | crontab -
+
+# Запуск cron и показ логов
+CMD ["sh", "-c", "cron && /usr/local/bin/python notify_expiring.py && tail -f /var/log/notify.log"]

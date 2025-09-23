@@ -109,6 +109,16 @@ class Database:
                 )
             """)
             
+            # Таблица уведомлений об истечении
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS expiry_notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key_id INTEGER NOT NULL,
+                    notification_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (key_id) REFERENCES vpn_keys (id)
+                )
+            """)
+            
             conn.commit()
             logger.info("База данных инициализирована")
             
@@ -229,7 +239,9 @@ class Database:
                 cursor.execute("""
                     SELECT * FROM vpn_keys 
                     WHERE user_id = ? AND is_active = 1
-                    ORDER BY created_at DESC
+                    ORDER BY 
+                        CASE WHEN expires_at > datetime('now') THEN 0 ELSE 1 END,
+                        expires_at DESC
                 """, (user_id,))
                 rows = cursor.fetchall()
                 return [dict(row) for row in rows]
@@ -372,6 +384,44 @@ class Database:
             logger.error(f"Ошибка получения истекших ключей: {e}")
             return []
             
+    def get_expiring_vpn_keys(self, days_before: int = 3) -> List[Dict[str, Any]]:
+        """Получение VPN ключей, которые скоро истекут"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT v.*, u.telegram_id, u.first_name 
+                    FROM vpn_keys v
+                    JOIN users u ON v.user_id = u.telegram_id
+                    WHERE v.is_active = 1 
+                    AND v.expires_at > datetime('now')
+                    AND v.expires_at <= datetime('now', '+{} days')
+                    AND v.id NOT IN (
+                        SELECT key_id FROM expiry_notifications 
+                        WHERE notification_date > datetime('now', '-1 day')
+                    )
+                """.format(days_before))
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения истекающих ключей: {e}")
+            return []
+            
+    def mark_notification_sent(self, key_id: int) -> bool:
+        """Отметить что уведомление отправлено"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO expiry_notifications (key_id, notification_date)
+                    VALUES (?, datetime('now'))
+                """, (key_id,))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка отметки уведомления: {e}")
+            return False
+            
     def mark_key_as_deleted(self, key_id: int) -> bool:
         """Пометить ключ как удаленный"""
         try:
@@ -385,6 +435,27 @@ class Database:
                 return True
         except Exception as e:
             logger.error(f"Ошибка пометки ключа как удаленного: {e}")
+            return False
+            
+    def extend_vpn_key(self, key_id: int, days: int) -> bool:
+        """Продление VPN ключа"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE vpn_keys 
+                    SET expires_at = datetime(expires_at, '+{} days'),
+                        is_active = 1
+                    WHERE id = ?
+                """.format(days), (key_id,))
+                conn.commit()
+                
+                if cursor.rowcount > 0:
+                    logger.info(f"VPN ключ {key_id} продлен на {days} дней")
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Ошибка продления ключа: {e}")
             return False
             
     def get_all_users(self) -> List[Dict[str, Any]]:
