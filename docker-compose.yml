@@ -31,7 +31,7 @@ services:
     environment:
       - XRAY_API_URL=http://xray-api:8080
     volumes:
-      - ./bot-data:/app/data
+      - ./bot-data:/shared
     depends_on:
       - xray-api
     restart: unless-stopped

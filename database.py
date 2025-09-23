@@ -498,4 +498,4 @@ class Database:
             return None
 
 # Глобальный экземпляр базы данных
-db = Database()
+db = Database("/shared/vpn_bot.db")
