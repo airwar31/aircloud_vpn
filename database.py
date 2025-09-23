@@ -60,11 +60,21 @@ class Database:
                     traffic_limit INTEGER NOT NULL,
                     device_limit INTEGER DEFAULT 1,
                     is_active BOOLEAN DEFAULT 1,
+                    is_hidden BOOLEAN DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (telegram_id),
                     FOREIGN KEY (order_id) REFERENCES orders (id)
                 )
             """)
+            
+            # Добавляем поле is_hidden если его нет
+            try:
+                cursor.execute("""
+                    ALTER TABLE vpn_keys ADD COLUMN is_hidden BOOLEAN DEFAULT 0
+                """)
+            except Exception:
+                # Поле уже существует
+                pass
             
             # Таблица рефералов
             cursor.execute("""
@@ -238,9 +248,9 @@ class Database:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT * FROM vpn_keys 
-                    WHERE user_id = ? AND is_active = 1
+                    WHERE user_id = ? AND is_hidden = 0
                     ORDER BY 
-                        CASE WHEN expires_at > datetime('now') THEN 0 ELSE 1 END,
+                        CASE WHEN expires_at > datetime('now') AND is_active = 1 THEN 0 ELSE 1 END,
                         expires_at DESC
                 """, (user_id,))
                 rows = cursor.fetchall()
@@ -423,7 +433,7 @@ class Database:
             return False
             
     def mark_key_as_deleted(self, key_id: int) -> bool:
-        """Пометить ключ как удаленный"""
+        """Пометить ключ как удаленный с сервера"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -435,6 +445,21 @@ class Database:
                 return True
         except Exception as e:
             logger.error(f"Ошибка пометки ключа как удаленного: {e}")
+            return False
+            
+    def hide_key_from_profile(self, key_id: int) -> bool:
+        """Скрыть ключ из профиля пользователя"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE vpn_keys SET is_hidden = 1 WHERE id = ?",
+                    (key_id,)
+                )
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка скрытия ключа: {e}")
             return False
             
     def extend_vpn_key(self, key_id: int, days: int) -> bool:

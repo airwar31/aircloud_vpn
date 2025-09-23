@@ -514,7 +514,8 @@ class VPNBot:
         keyboard_buttons = []
         for i, key in enumerate(vpn_keys, 1):
             expires_at = datetime.fromisoformat(key['expires_at'].replace('Z', '+00:00'))
-            status = "✅" if expires_at > datetime.now() else "❌"
+            is_active = expires_at > datetime.now() and key['is_active'] == 1
+            status = "✅" if is_active else "❌"
             keyboard_buttons.append([InlineKeyboardButton(
                 text=f"{status} {key['email'][:20]}...", 
                 callback_data=f"key_{key['id']}"
@@ -547,12 +548,25 @@ class VPNBot:
             return
             
         expires_at = datetime.fromisoformat(key['expires_at'].replace('Z', '+00:00'))
-        is_active = expires_at > datetime.now()
-        status = "✅ Активен" if is_active else "❌ Истек"
+        is_active = expires_at > datetime.now() and key['is_active'] == 1
+        
+        if key['is_active'] == 0:
+            status = "❌ Удален с сервера"
+        elif expires_at <= datetime.now():
+            status = "❌ Истек"
+        else:
+            status = "✅ Активен"
         
         # Кнопки зависят от статуса ключа
         buttons = []
-        if is_active:
+        if key['is_active'] == 0:
+            # Ключ удален с сервера - только удалить из профиля
+            buttons = [
+                [InlineKeyboardButton(text="🗑 Удалить из профиля", callback_data=f"delete_{key_id}")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="my_keys")],
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
+            ]
+        elif is_active:
             # Активный ключ - только навигация
             buttons = [
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data="my_keys")],
@@ -562,7 +576,7 @@ class VPNBot:
             # Истекший ключ - продлить или удалить
             buttons = [
                 [InlineKeyboardButton(text="🔄 Продлить", callback_data=f"extend_{key_id}")],
-                [InlineKeyboardButton(text="🗑 Удалить", callback_data=f"delete_{key_id}")],
+                [InlineKeyboardButton(text="🗑 Удалить из профиля", callback_data=f"delete_{key_id}")],
                 [InlineKeyboardButton(text="⬅️ Назад", callback_data="my_keys")],
                 [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
             ]
@@ -912,8 +926,8 @@ class VPNBot:
         key_id = int(callback.data.split("_")[1])
         user_id = callback.from_user.id
         
-        # Помечаем ключ как удаленный
-        if db.mark_key_as_deleted(key_id):
+        # Скрываем ключ из профиля
+        if db.hide_key_from_profile(key_id):
             await callback.message.edit_text(
                 "✅ <b>Ключ удален из вашего профиля</b>",
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
