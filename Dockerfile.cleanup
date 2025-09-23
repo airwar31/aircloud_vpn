@@ -10,6 +10,9 @@ COPY database.py .
 COPY xray_manager.py .
 COPY config.py .
 
+# Создаем директорию для общей БД
+RUN mkdir -p /shared
+
 # Установка cron
 RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
 

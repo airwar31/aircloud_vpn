@@ -14,7 +14,7 @@ XRAY_API_URL = os.getenv("XRAY_API_URL", "http://localhost:8080")
 async def cleanup_expired_keys():
     """Удаление истекших VPN ключей"""
     try:
-        db = Database("/app/data/vpn_bot.db")
+        db = Database("/shared/vpn_bot.db")
         
         # Получаем все истекшие ключи
         expired_keys = db.get_expired_vpn_keys()
