@@ -397,8 +397,16 @@ class VPNBot:
             
         text = "🔑 <b>Ваши VPN ключи:</b>\n\n"
         for i, key in enumerate(vpn_keys, 1):
-            expires_at = datetime.fromisoformat(key['expires_at'].replace('Z', '+00:00'))
-            is_active = expires_at > datetime.now() and key['is_active'] == 1
+            try:
+                expires_at_str = str(key['expires_at'])
+                if 'Z' in expires_at_str:
+                    expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                else:
+                    expires_at = datetime.fromisoformat(expires_at_str)
+                is_active = expires_at > datetime.now() and key['is_active'] == 1
+            except (ValueError, TypeError):
+                is_active = False
+                
             status = "✅" if is_active else "❌"
             text += f"{status} {key['email']}\n"
             text += f"<code>{key['config']}</code>\n\n"
