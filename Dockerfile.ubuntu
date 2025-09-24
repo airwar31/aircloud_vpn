@@ -24,7 +24,7 @@ RUN wget -O xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/
 WORKDIR /app
 
 # Копирование файлов
-COPY requirements.txt .
+COPY requirements-xray.txt requirements.txt
 COPY xray_api.py .
 
 # Установка Python зависимостей
