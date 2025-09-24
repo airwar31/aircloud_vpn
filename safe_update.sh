@@ -1,48 +1,37 @@
 #!/bin/bash
-# Безопасное обновление на рабочем сервере
 
-echo "🔄 Безопасное обновление сервера..."
+PROJECT_DIR="/path/to/your/aircloud_vpn"
+REPO_URL="https://github.com/your-repo/aircloud_vpn.git"
 
-# 1. Создаем бэкап
-echo "📦 Создание бэкапа..."
-BACKUP_DIR="backup_$(date +%Y%m%d_%H%M%S)"
-mkdir -p $BACKUP_DIR
+cd $PROJECT_DIR
 
-# Бэкапим важные данные
-cp -r xray-config $BACKUP_DIR/ 2>/dev/null || echo "⚠️ xray-config не найден"
-cp -r bot-data $BACKUP_DIR/ 2>/dev/null || echo "⚠️ bot-data не найден"
-cp .env $BACKUP_DIR/ 2>/dev/null || echo "⚠️ .env не найден"
-cp docker-compose.yml $BACKUP_DIR/ 2>/dev/null || echo "⚠️ docker-compose.yml не найден"
+echo "1. Остановка сервисов..."
+docker-compose down
 
-echo "✅ Бэкап создан в $BACKUP_DIR"
+echo "2. Создание бэкапа..."
+./update_backup.sh
 
-# 2. Обновляем только код бота (без пересборки контейнеров)
-echo "🔧 Обновление кода бота..."
+echo "3. Сохранение критических файлов..."
+cp .env .env.backup
+cp -r logs logs.backup
 
-# Копируем новые файлы
-cp bot.py bot.py.backup 2>/dev/null
-cp requirements.txt requirements.txt.backup 2>/dev/null
+echo "4. Обновление кода..."
+git stash  # Сохраняем локальные изменения
+git pull origin main
 
-# 3. Перезапускаем только бот (не трогаем БД и Xray)
-echo "🔄 Перезапуск только бота..."
-docker-compose stop vpn-bot
-docker-compose build vpn-bot
-docker-compose up -d vpn-bot
+echo "5. Восстановление конфигурации..."
+cp .env.backup .env
+cp -r logs.backup/* logs/ 2>/dev/null || true
 
-# 4. Проверяем статус
-echo "📊 Проверка статуса..."
-sleep 5
-docker ps | grep vpn-bot
+echo "6. Обновление зависимостей..."
+docker-compose build --no-cache
 
-# 5. Тест бота
-echo "🧪 Тест бота..."
-if docker logs vpn-bot --tail 10 | grep -q "Запуск VPN бота"; then
-    echo "✅ Бот запущен успешно"
-else
-    echo "❌ Проблемы с ботом, откатываем..."
-    cp bot.py.backup bot.py 2>/dev/null
-    docker-compose stop vpn-bot
-    docker-compose up -d vpn-bot
-fi
+echo "7. Запуск обновленных сервисов..."
+docker-compose up -d
 
-echo "🏁 Обновление завершено"
+echo "8. Проверка статуса..."
+sleep 10
+docker-compose ps
+
+echo "Обновление завершено!"
+echo "Проверьте работу бота и при необходимости откатитесь: git stash pop"

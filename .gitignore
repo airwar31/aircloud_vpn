@@ -1,0 +1,31 @@
+# Конфигурация и секреты
+.env
+.env.local
+.env.backup
+
+# Данные и логи
+logs/
+data/
+backups/
+
+# База данных
+*.db
+*.sqlite
+*.sql
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# Docker
+.dockerignore
+
+# Системные файлы
+.DS_Store
+Thumbs.db

@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  vpn-bot:
+    build: .
+    container_name: aircloud_vpn_bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - /etc/xray:/etc/xray:ro
+    networks:
+      - vpn_network
+
+networks:
+  vpn_network:
+    driver: bridge
