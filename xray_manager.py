@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class XrayManager:
     """Менеджер для управления Xray через API"""
     
-    def __init__(self, api_url: str = "http://localhost:8080"):
+    def __init__(self, api_url: str):
         # Проверяем и очищаем URL
         if not api_url or not api_url.startswith(('http://', 'https://')):
             raise ValueError("Invalid API URL provided")
@@ -19,7 +19,19 @@ class XrayManager:
         self.session = None
         
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
+        connector = aiohttp.TCPConnector(
+            limit=10,
+            limit_per_host=5,
+            ttl_dns_cache=300,
+            use_dns_cache=True,
+            keepalive_timeout=30,
+            enable_cleanup_closed=True
+        )
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        self.session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout
+        )
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
