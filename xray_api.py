@@ -146,11 +146,11 @@ class XrayAPI:
             
     def generate_client_config(self, client_id: str, email: str) -> str:
         """Генерация конфигурации для клиента с Reality"""
-        server_ip = os.getenv("SERVER_IP", "5.129.236.103")
+        server_domain = os.getenv("SERVER_DOMAIN", "air31cloud.ru")
         port = self.config["inbounds"][0]["port"]
         
         # VLESS конфигурация с Reality
-        config = (f"vless://{client_id}@{server_ip}:{port}?"
+        config = (f"vless://{client_id}@{server_domain}:{port}?"
                  f"type=tcp&security=reality&pbk={self.reality_keys['public_key']}&"
                  f"fp=chrome&sni=dl.google.com&sid={self.reality_keys['short_id']}&spx=%2F&flow=xtls-rprx-vision#{email}")
         return config

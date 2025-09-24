@@ -1,6 +1,30 @@
 version: '3.8'
 
 services:
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    depends_on:
+      - xray-api
+    restart: unless-stopped
+    networks:
+      - vpn-network
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\""
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
   xray-api:
     build:
       context: .
@@ -11,9 +35,11 @@ services:
       - 8.8.4.4
     ports:
       - "8080:8080"  # API порт
-      - "443:443"    # VPN порт
+      - "8443:443"   # VPN порт (изменен для nginx)
     env_file:
       - .env
+    environment:
+      - SERVER_DOMAIN=air31cloud.ru
     volumes:
       - ./xray-config:/etc/xray
       - ./xray-logs:/var/log/xray

@@ -107,10 +107,6 @@ class VPNBot:
             AdminStates.waiting_gift_link_days
         )
         self.dp.callback_query.register(
-            self.admin_expire_all,
-            F.data == "admin_expire_all"
-        )
-        self.dp.callback_query.register(
             self.extend_key,
             F.data.startswith("extend_")
         )
@@ -678,7 +674,6 @@ class VPNBot:
             [InlineKeyboardButton(text="🔍 Проверить пользователя", callback_data="admin_check_user")],
             [InlineKeyboardButton(text="💵 Сбросить реферальные деньги", callback_data="admin_reset_referral")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
-            [InlineKeyboardButton(text="⚠️ ТЕСТ: Истечь все ключи", callback_data="admin_expire_all")],
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
         ])
         
@@ -906,39 +901,7 @@ class VPNBot:
                 logger.error(f"Не удалось создать подарочный VPN клиента для {email}")
                 return None
                 
-    async def admin_expire_all(self, callback: types.CallbackQuery):
-        """Тестовая функция - сделать все ключи истекшими"""
-        if callback.from_user.id not in ADMIN_IDS:
-            await callback.answer("❌ Доступ запрещен")
-            return
-            
-        try:
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    UPDATE vpn_keys 
-                    SET expires_at = datetime('now', '-1 day')
-                    WHERE is_active = 1
-                """)
-                affected = cursor.rowcount
-                conn.commit()
-                
-            await callback.message.edit_text(
-                f"⚠️ <b>ТЕСТ: Все ключи сделаны истекшими!</b>\n\n"
-                f"🔢 Обновлено ключей: {affected}\n\n"
-                "🔄 Очистка произойдет в течение 10 минут",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_panel")]
-                ]),
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            await callback.message.edit_text(
-                f"❌ Ошибка: {e}",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_panel")]
-                ])
-            )
+
             
     async def extend_key(self, callback: types.CallbackQuery):
         """Продление ключа - показ тарифов"""
