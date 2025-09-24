@@ -139,4 +139,10 @@ def health():
     return {"status": "healthy"}
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8081)
+    # Для production используйте gunicorn
+    import os
+    if os.getenv('FLASK_ENV') == 'production':
+        from waitress import serve
+        serve(app, host='0.0.0.0', port=8081)
+    else:
+        app.run(host='0.0.0.0', port=8081, debug=False)
