@@ -1156,21 +1156,7 @@ class VPNBot:
             
         except ValueError:
             await message.answer("❌ Неверный ID. Введите число.")
-                
-    async def start_polling(self):
-        """Запуск бота"""
-        logger.info("Запуск VPN бота...")
-        try:
-            await self.dp.start_polling(self.bot)
-        except Exception as e:
-            logger.error(f"Ошибка при запуске бота: {e}")
-        finally:
-            await self.bot.session.close()
-
-async def main():
-    bot = VPNBot()
-    await bot.start_polling()
-
+    
     async def reset_user_earnings(self, callback: types.CallbackQuery):
         """Сброс реферальных денег конкретного пользователя"""
         if callback.from_user.id not in ADMIN_IDS:
@@ -1206,6 +1192,16 @@ async def main():
                 pass
         else:
             await callback.answer("❌ Ошибка сброса")
+                
+    async def start_polling(self):
+        """Запуск бота"""
+        logger.info("Запуск VPN бота...")
+        try:
+            await self.dp.start_polling(self.bot)
+        except Exception as e:
+            logger.error(f"Ошибка при запуске бота: {e}")
+        finally:
+            await self.bot.session.close()
 
 async def main():
     bot = VPNBot()
