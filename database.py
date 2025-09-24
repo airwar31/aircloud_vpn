@@ -614,5 +614,37 @@ class Database:
             logger.error(f"Ошибка использования подарочной ссылки: {e}")
             return None
 
+    def get_users_with_referral_earnings(self) -> List[Dict[str, Any]]:
+        """Получение пользователей с реферальными деньгами"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT u.telegram_id, u.username, u.first_name, SUM(re.amount) as total_earnings
+                    FROM users u
+                    JOIN referral_earnings re ON u.telegram_id = re.referrer_id
+                    GROUP BY u.telegram_id
+                    HAVING total_earnings > 0
+                    ORDER BY total_earnings DESC
+                """)
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения пользователей с деньгами: {e}")
+            return []
+    
+    def reset_user_referral_earnings(self, user_id: int) -> bool:
+        """Сброс реферальных денег пользователя"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM referral_earnings WHERE referrer_id = ?", (user_id,))
+                conn.commit()
+                logger.info(f"Реферальные деньги сброшены для пользователя {user_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка сброса реферальных денег: {e}")
+            return False
+
 # Глобальный экземпляр базы данных
 db = Database("/shared/vpn_bot.db")

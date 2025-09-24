@@ -37,6 +37,7 @@ class AdminStates(StatesGroup):
     waiting_gift_user_id = State()
     waiting_gift_days = State()
     waiting_gift_link_days = State()
+    waiting_check_user_id = State()
 
 class VPNBot:
     def __init__(self):
@@ -116,6 +117,26 @@ class VPNBot:
         self.dp.callback_query.register(
             self.delete_key,
             F.data.startswith("delete_")
+        )
+        self.dp.callback_query.register(
+            self.show_help_instructions,
+            F.data == "help_instructions"
+        )
+        self.dp.callback_query.register(
+            self.admin_reset_referral,
+            F.data == "admin_reset_referral"
+        )
+        self.dp.callback_query.register(
+            self.reset_user_earnings,
+            F.data.startswith("reset_user_")
+        )
+        self.dp.callback_query.register(
+            self.admin_check_user,
+            F.data == "admin_check_user"
+        )
+        self.dp.message.register(
+            self.process_check_user_id,
+            AdminStates.waiting_check_user_id
         )
         
     async def cmd_start(self, message: types.Message):
@@ -206,7 +227,8 @@ class VPNBot:
         keyboard_buttons = [
             [InlineKeyboardButton(text="💳 Купить VPN", callback_data="buy_vpn")],
             [InlineKeyboardButton(text="👤 Мои ключи", callback_data="my_keys")],
-            [InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals")]
+            [InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals")],
+            [InlineKeyboardButton(text="📱 Инструкция", callback_data="help_instructions")]
         ]
         
         if user.id in ADMIN_IDS:
@@ -242,7 +264,7 @@ class VPNBot:
             "/start - Главное меню\n"
             "/profile - Мои VPN ключи\n"
             "/help - Эта справка\n\n"
-            "❓ Если возникли проблемы, обратитесь в поддержку: @support"
+            "❓ Если возникли проблемы, обратитесь в поддержку: @MiddleCloud1"
         )
         await message.answer(help_text, parse_mode="HTML")
         
@@ -629,7 +651,9 @@ class VPNBot:
             f"🎁 <b>Условия:</b>\n"
             f"• Приведите друга по ссылке\n"
             f"• Получайте бонус с каждой покупки\n"
-            f"• 1мес - 20₽, 3мес - 50₽, 6мес - 90₽, 1год - 140₽"
+            f"• 1мес - 20₽, 3мес - 50₽, 6мес - 90₽, 1год - 140₽\n\n"
+            f"💵 <b>Выплаты:</b> от 100₽\n"
+            f"💬 Обращайтесь к @MiddleCloud1 для выплаты"
         )
         
         if referrals:
@@ -651,6 +675,8 @@ class VPNBot:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🎁 Подарить ключ", callback_data="admin_gift_key")],
             [InlineKeyboardButton(text="🎁 Создать подарочную ссылку", callback_data="admin_gift_link")],
+            [InlineKeyboardButton(text="🔍 Проверить пользователя", callback_data="admin_check_user")],
+            [InlineKeyboardButton(text="💵 Сбросить реферальные деньги", callback_data="admin_reset_referral")],
             [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
             [InlineKeyboardButton(text="⚠️ ТЕСТ: Истечь все ключи", callback_data="admin_expire_all")],
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
@@ -698,7 +724,8 @@ class VPNBot:
         keyboard_buttons = [
             [InlineKeyboardButton(text="💳 Купить VPN", callback_data="buy_vpn")],
             [InlineKeyboardButton(text="👤 Мои ключи", callback_data="my_keys")],
-            [InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals")]
+            [InlineKeyboardButton(text="👥 Рефералы", callback_data="referrals")],
+            [InlineKeyboardButton(text="📱 Инструкция", callback_data="help_instructions")]
         ]
         
         if callback.from_user.id in ADMIN_IDS:
@@ -1013,6 +1040,122 @@ class VPNBot:
             )
         else:
             await callback.answer("❌ Ошибка создания платежа")
+    
+    async def show_help_instructions(self, callback: types.CallbackQuery):
+        """Показ инструкций по подключению"""
+        help_text = (
+            "📱 <b>Инструкция по подключению VPN:</b>\n\n"
+            "<b>Для Android:</b>\n"
+            "1. Скачайте приложение v2rayNG из Google Play\n"
+            "2. Нажмите + и выберите 'Импорт из буфера обмена'\n"
+            "3. Вставьте полученную конфигурацию\n\n"
+            "<b>Для iOS:</b>\n"
+            "1. Скачайте приложение Shadowrocket из App Store\n"
+            "2. Нажмите + и вставьте конфигурацию\n\n"
+            "<b>Для Windows:</b>\n"
+            "1. Скачайте v2rayN с GitHub\n"
+            "2. Добавьте сервер через 'Импорт из буфера обмена'\n\n"
+            "❓ Если возникли проблемы, обратитесь в поддержку: @MiddleCloud1"
+        )
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_menu")]
+        ])
+        
+        await callback.message.edit_text(help_text, reply_markup=keyboard, parse_mode="HTML")
+    
+    async def admin_reset_referral(self, callback: types.CallbackQuery):
+        """Сброс реферальных денег пользователя"""
+        if callback.from_user.id not in ADMIN_IDS:
+            await callback.answer("❌ Доступ запрещен")
+            return
+        
+        # Получаем список пользователей с реферальными деньгами
+        users_with_earnings = db.get_users_with_referral_earnings()
+        
+        if not users_with_earnings:
+            await callback.message.edit_text(
+                "💵 Нет пользователей с реферальными деньгами",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_panel")]
+                ])
+            )
+            return
+        
+        # Создаем кнопки для каждого пользователя
+        buttons = []
+        for user in users_with_earnings[:10]:  # Показываем первых 10
+            name = user['username'] or user['first_name'] or f"ID{user['telegram_id']}"
+            buttons.append([InlineKeyboardButton(
+                text=f"{name} - {user['total_earnings']}₽",
+                callback_data=f"reset_user_{user['telegram_id']}"
+            )])
+        
+        buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_panel")])
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+        
+        await callback.message.edit_text(
+            "💵 <b>Сброс реферальных денег</b>\n\n"
+            "Выберите пользователя:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+    
+    async def admin_check_user(self, callback: types.CallbackQuery, state: FSMContext):
+        """Начало проверки пользователя"""
+        if callback.from_user.id not in ADMIN_IDS:
+            await callback.answer("❌ Доступ запрещен")
+            return
+            
+        await state.set_state(AdminStates.waiting_check_user_id)
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_panel")]
+        ])
+        
+        await callback.message.edit_text(
+            "🔍 <b>Проверка пользователя</b>\n\n"
+            "Введите Telegram ID пользователя:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+    
+    async def process_check_user_id(self, message: types.Message, state: FSMContext):
+        """Обработка ID пользователя для проверки"""
+        try:
+            user_id = int(message.text)
+            user_info = db.get_user(user_id)
+            
+            if not user_info:
+                await message.answer("❌ Пользователь не найден")
+                return
+            
+            earnings = db.get_total_referral_earnings(user_id)
+            referrals = db.get_referrals(user_id)
+            vpn_keys = db.get_user_vpn_keys(user_id)
+            
+            name = user_info['username'] or user_info['first_name'] or f"ID{user_id}"
+            
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💵 Сбросить деньги", callback_data=f"reset_user_{user_id}")],
+                [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_panel")]
+            ])
+            
+            await message.answer(
+                f"👤 <b>Пользователь:</b> {name}\n"
+                f"🆔 <b>ID:</b> {user_id}\n"
+                f"💰 <b>Реферальные деньги:</b> {earnings}₽\n"
+                f"👥 <b>Привлечено рефералов:</b> {len(referrals)}\n"
+                f"🔑 <b>VPN ключей:</b> {len(vpn_keys)}",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            
+            await state.clear()
+            
+        except ValueError:
+            await message.answer("❌ Неверный ID. Введите число.")
                 
     async def start_polling(self):
         """Запуск бота"""
@@ -1030,3 +1173,39 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+    
+    async def reset_user_earnings(self, callback: types.CallbackQuery):
+        """Сброс реферальных денег конкретного пользователя"""
+        if callback.from_user.id not in ADMIN_IDS:
+            await callback.answer("❌ Доступ запрещен")
+            return
+        
+        user_id = int(callback.data.split("_")[2])
+        
+        # Получаем сумму до сброса
+        earnings = db.get_total_referral_earnings(user_id)
+        
+        if db.reset_user_referral_earnings(user_id):
+            user_info = db.get_user(user_id)
+            name = user_info['username'] or user_info['first_name'] or f"ID{user_id}"
+            
+            await callback.message.edit_text(
+                f"✅ <b>Реферальные деньги сброшены!</b>\n\n"
+                f"👤 Пользователь: {name}\n"
+                f"💰 Сумма: {earnings}₽",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_panel")]
+                ]),
+                parse_mode="HTML"
+            )
+            # Уведомляем пользователя о сбросе
+            try:
+                await self.bot.send_message(
+                    user_id,
+                    f"💵 Ваши реферальные деньги ({earnings}₽) были выплачены.\n"
+                    f"💬 По вопросам обращайтесь: @MiddleCloud1"
+                )
+            except:
+                pass
+        else:
+            await callback.answer("❌ Ошибка сброса")
