@@ -6,3 +6,5 @@ python-dotenv==1.0.0
 waitress==3.0.0
 cryptography==42.0.8
 requests==2.31.0
+flask==3.0.0
+mysql-connector-python==8.2.0
