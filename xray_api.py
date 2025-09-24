@@ -21,8 +21,17 @@ XRAY_BINARY = "/usr/local/bin/xray"
 class XrayAPI:
     def __init__(self):
         self.clients = {}
-        self.reality_keys = self.generate_reality_keys()
         self.load_config()
+        # Используем ключи из конфигурации, если она существует
+        if hasattr(self, 'config') and 'inbounds' in self.config:
+            reality_settings = self.config["inbounds"][0]["streamSettings"]["realitySettings"]
+            self.reality_keys = {
+                "private_key": reality_settings["privateKey"],
+                "public_key": self.get_public_key_from_private(reality_settings["privateKey"]),
+                "short_id": reality_settings["shortIds"][0]
+            }
+        else:
+            self.reality_keys = self.generate_reality_keys()
         
     def load_config(self):
         """Загрузка конфигурации Xray"""
@@ -152,27 +161,9 @@ class XrayAPI:
         server_domain = os.getenv("SERVER_DOMAIN", "air31cloud.ru")
         external_port = os.getenv("VPN_EXTERNAL_PORT", "8444")
         
-        # Используем ключи из текущей конфигурации
-        reality_settings = self.config["inbounds"][0]["streamSettings"]["realitySettings"]
-        private_key = reality_settings["privateKey"]
-        short_id = reality_settings["shortIds"][0]
-        
-        # Генерируем публичный ключ из приватного
-        try:
-            result = subprocess.run(["/usr/local/bin/xray", "x25519", "-i", private_key], capture_output=True, text=True)
-            if result.returncode == 0:
-                # Извлекаем только публичный ключ из вывода
-                lines = result.stdout.strip().split('\n')
-                for line in lines:
-                    if 'Public key:' in line:
-                        public_key = line.split(': ')[1]
-                        break
-                else:
-                    public_key = self.reality_keys['public_key']
-            else:
-                public_key = self.reality_keys['public_key']
-        except:
-            public_key = self.reality_keys['public_key']
+        # Используем сохраненные ключи
+        public_key = self.reality_keys['public_key']
+        short_id = self.reality_keys['short_id']
         
         config = (f"vless://{client_id}@{server_domain}:{external_port}?"
                  f"type=tcp&security=reality&pbk={public_key}&"
@@ -195,6 +186,19 @@ class XrayAPI:
             }
         return {}
         
+    def get_public_key_from_private(self, private_key: str) -> str:
+        """Получение публичного ключа из приватного"""
+        try:
+            result = subprocess.run(["/usr/local/bin/xray", "x25519", "-i", private_key], capture_output=True, text=True)
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                for line in lines:
+                    if 'Public key:' in line:
+                        return line.split(': ')[1]
+            return "fallback_public_key"
+        except:
+            return "fallback_public_key"
+            
     def generate_reality_keys(self) -> Dict[str, str]:
         """Генерация Reality ключей через Xray"""
         try:
