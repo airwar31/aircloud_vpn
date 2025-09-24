@@ -47,7 +47,7 @@ services:
       - 8.8.4.4
     ports:
       - "8080:8080"  # API порт
-      - "8443:443"   # VPN порт (изменен для nginx)
+      - "8444:443"   # VPN порт
     env_file:
       - .env
     environment:
