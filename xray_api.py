@@ -50,14 +50,10 @@ class XrayAPI:
     def restart_xray(self):
         """Перезапуск Xray"""
         try:
-            # Отправляем сигнал HUP для перезагрузки конфигурации без перезапуска
-            result = subprocess.run(["/usr/bin/pkill", "-HUP", "-f", "xray"], check=False)
-            if result.returncode == 0:
-                logger.info("Xray конфигурация перезагружена")
-            else:
-                logger.warning("Не удалось перезагрузить Xray, возможно процесс не запущен")
+            # Просто логируем, не перезапускаем
+            logger.info("Конфигурация сохранена")
         except Exception as e:
-            logger.error(f"Ошибка перезагрузки Xray: {e}")
+            logger.error(f"Ошибка: {e}")
             
     def get_default_config(self) -> Dict[str, Any]:
         """Базовая конфигурация Xray с Reality"""
