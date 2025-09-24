@@ -16,7 +16,7 @@ import aiohttp
 from yookassa import Configuration, Payment
 
 from config import *
-from database import db
+from database_mysql import db
 from xray_manager import XrayManager
 
 # Настройка ЮKassa
@@ -134,9 +134,31 @@ class VPNBot:
             self.process_check_user_id,
             AdminStates.waiting_check_user_id
         )
+        self.dp.callback_query.register(
+            self.accept_agreement,
+            F.data == "accept_agreement"
+        )
         
     async def cmd_start(self, message: types.Message):
         """Обработчик команды /start"""
+        user = message.from_user
+        
+        # Проверяем согласие с пользовательским соглашением
+        if not db.has_user_agreed(user.id):
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="📜 Прочитать соглашение", url="https://air31cloud.ru/agreement")],
+                [InlineKeyboardButton(text="✅ Принять соглашение", callback_data="accept_agreement")]
+            ])
+            
+            await message.answer(
+                "📜 <b>Пользовательское соглашение</b>\n\n"
+                "Для использования VPN-сервиса необходимо принять пользовательское соглашение.\n\n"
+                "🔍 Пожалуйста, ознакомьтесь с условиями и подтвердите согласие.",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            return
+        
         # Проверяем реферальную ссылку или подарочный код
         referrer_id = None
         gift_code = None
@@ -1155,6 +1177,20 @@ class VPNBot:
                 pass
         else:
             await callback.answer("❌ Ошибка сброса")
+            
+    async def accept_agreement(self, callback: types.CallbackQuery):
+        """Принятие пользовательского соглашения"""
+        user_id = callback.from_user.id
+        
+        if db.accept_user_agreement(user_id):
+            await callback.message.edit_text(
+                "✅ <b>Соглашение принято!</b>\n\n"
+                "🎉 Добро пожаловать в VPN-сервис AirCloud!\n\n"
+                "Нажмите /start для продолжения.",
+                parse_mode="HTML"
+            )
+        else:
+            await callback.answer("❌ Ошибка принятия соглашения")
                 
     async def start_polling(self):
         """Запуск бота"""

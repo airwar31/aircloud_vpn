@@ -3,7 +3,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime
-from database import Database
+from database_mysql import db
 from xray_manager import XrayManager
 
 logging.basicConfig(level=logging.INFO)
@@ -14,7 +14,7 @@ XRAY_API_URL = os.getenv("XRAY_API_URL", "http://xray-api:8080")
 async def cleanup_expired_keys():
     """Удаление истекших VPN ключей"""
     try:
-        db = Database("/shared/vpn_bot.db")
+        # db уже инициализирована в модуле
         
         # Получаем все истекшие ключи
         expired_keys = db.get_expired_vpn_keys()

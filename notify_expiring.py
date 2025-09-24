@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from database import Database
+from database_mysql import db
 from config import BOT_TOKEN
 
 logging.basicConfig(level=logging.INFO)
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 async def notify_expiring_keys():
     """Уведомления о скором истечении VPN ключей"""
     try:
-        db = Database("/shared/vpn_bot.db")
+        # db уже инициализирована в модуле
         bot = Bot(token=BOT_TOKEN)
         
         # Получаем ключи, которые истекают в течение 3 дней
