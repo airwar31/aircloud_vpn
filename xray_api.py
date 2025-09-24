@@ -150,13 +150,27 @@ class XrayAPI:
     def generate_client_config(self, client_id: str, email: str) -> str:
         """Генерация конфигурации для клиента с Reality"""
         server_domain = os.getenv("SERVER_DOMAIN", "air31cloud.ru")
-        # Используем внешний порт 8444 вместо внутреннего 443
         external_port = os.getenv("VPN_EXTERNAL_PORT", "8444")
         
-        # VLESS конфигурация с Reality
+        # Используем ключи из текущей конфигурации
+        reality_settings = self.config["inbounds"][0]["streamSettings"]["realitySettings"]
+        private_key = reality_settings["privateKey"]
+        short_id = reality_settings["shortIds"][0]
+        
+        # Генерируем публичный ключ из приватного
+        try:
+            result = subprocess.run(["/usr/local/bin/xray", "x25519", "-i", private_key], capture_output=True, text=True)
+            if result.returncode == 0:
+                public_key = result.stdout.strip()
+            else:
+                # Fallback - используем сохраненный ключ
+                public_key = self.reality_keys['public_key']
+        except:
+            public_key = self.reality_keys['public_key']
+        
         config = (f"vless://{client_id}@{server_domain}:{external_port}?"
-                 f"type=tcp&security=reality&pbk={self.reality_keys['public_key']}&"
-                 f"fp=chrome&sni=dl.google.com&sid={self.reality_keys['short_id']}&spx=%2F&flow=xtls-rprx-vision#{email}")
+                 f"type=tcp&security=reality&pbk={public_key}&"
+                 f"fp=chrome&sni=dl.google.com&sid={short_id}&spx=%2F&flow=xtls-rprx-vision#{email}")
         return config
         
     def get_client_stats(self, email: str) -> Dict[str, Any]:
@@ -179,6 +193,7 @@ class XrayAPI:
         """Генерация Reality ключей через Xray"""
         try:
             result = subprocess.run(["/usr/local/bin/xray", "x25519"], capture_output=True, text=True)
+            logger.info(f"Xray x25519 result: {result.stdout}")
             if result.returncode == 0:
                 lines = result.stdout.strip().split('\n')
                 private_key = lines[0].split(': ')[1]
@@ -187,11 +202,13 @@ class XrayAPI:
                 # Генерируем короткий ID
                 short_id = secrets.token_hex(1)
                 
-                return {
+                keys = {
                     "private_key": private_key,
                     "public_key": public_key,
                     "short_id": short_id
                 }
+                logger.info(f"Reality ключи сгенерированы: {keys}")
+                return keys
             else:
                 logger.error(f"Ошибка генерации ключей: {result.stderr}")
                 # Генерируем случайные fallback ключи
