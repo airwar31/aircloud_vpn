@@ -1171,9 +1171,6 @@ async def main():
     bot = VPNBot()
     await bot.start_polling()
 
-if __name__ == "__main__":
-    asyncio.run(main())
-    
     async def reset_user_earnings(self, callback: types.CallbackQuery):
         """Сброс реферальных денег конкретного пользователя"""
         if callback.from_user.id not in ADMIN_IDS:
@@ -1209,3 +1206,10 @@ if __name__ == "__main__":
                 pass
         else:
             await callback.answer("❌ Ошибка сброса")
+
+async def main():
+    bot = VPNBot()
+    await bot.start_polling()
+
+if __name__ == "__main__":
+    asyncio.run(main())
