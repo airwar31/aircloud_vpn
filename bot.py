@@ -109,6 +109,47 @@ class VPNBot:
             parse_mode="HTML"
         )
         
+    async def cmd_help(self, message: types.Message):
+        """Обработчик команды /help"""
+        help_text = (
+            "📱 <b>Инструкция по подключению VPN:</b>\n\n"
+            "<b>Для Android:</b>\n"
+            "1. Скачайте приложение v2rayNG из Google Play\n"
+            "2. Нажмите + и выберите 'Импорт из буфера обмена'\n"
+            "3. Вставьте полученную конфигурацию\n\n"
+            "<b>Для iOS:</b>\n"
+            "1. Скачайте приложение Shadowrocket из App Store\n"
+            "2. Нажмите + и вставьте конфигурацию\n\n"
+            "<b>Для Windows:</b>\n"
+            "1. Скачайте v2rayN с GitHub\n"
+            "2. Добавьте сервер через 'Импорт из буфера обмена'\n\n"
+            "❓ Если возникли проблемы, обратитесь в поддержку: @MiddleCloud1"
+        )
+        await message.answer(help_text, parse_mode="HTML")
+        
+    async def cmd_profile(self, message: types.Message):
+        """Обработчик команды /profile"""
+        user_id = message.from_user.id
+        vpn_keys = db.get_user_vpn_keys(user_id)
+        
+        if not vpn_keys:
+            await message.answer(
+                "📭 У вас пока нет активных VPN ключей.\n\n"
+                "Используйте /start для покупки подписки."
+            )
+            return
+            
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="👤 Мои ключи", callback_data="my_keys")]
+        ])
+        
+        await message.answer(
+            "👤 <b>Профиль</b>\n\n"
+            "Используйте кнопку ниже для просмотра ваших VPN ключей.",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
+        
     async def show_plans(self, callback: types.CallbackQuery):
         """Показ тарифов"""
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
