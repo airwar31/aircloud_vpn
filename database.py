@@ -140,7 +140,10 @@ class Database:
         try:
             yield conn
         except Exception as e:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass  # Игнорируем ошибки rollback в autocommit режиме
             logger.error(f"Ошибка БД: {e}")
             raise
         finally:
@@ -301,8 +304,8 @@ class Database:
                 cursor.execute("""
                     SELECT SUM(bonus_amount) FROM referrals WHERE referrer_id = ?
                 """, (user_id,))
-                result = cursor.fetchone()[0]
-                return result or 0
+                result = cursor.fetchone()
+                return result[0] if result and result[0] else 0
         except Exception as e:
             logger.error(f"Ошибка получения бонуса: {e}")
             return 0
@@ -341,8 +344,8 @@ class Database:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT SUM(amount) FROM referral_earnings WHERE referrer_id = ?", (user_id,))
-                result = cursor.fetchone()[0]
-                return result or 0
+                result = cursor.fetchone()
+                return result[0] if result and result[0] else 0
         except Exception as e:
             logger.error(f"Ошибка получения выплат: {e}")
             return 0
@@ -405,12 +408,12 @@ class Database:
                     JOIN users u ON v.user_id = u.telegram_id
                     WHERE v.is_active = 1 
                     AND v.expires_at > datetime('now')
-                    AND v.expires_at <= datetime('now', '+{} days')
+                    AND v.expires_at <= datetime('now', '+' || ? || ' days')
                     AND v.id NOT IN (
                         SELECT key_id FROM expiry_notifications 
                         WHERE notification_date > datetime('now', '-1 day')
                     )
-                """.format(days_before))
+                """, (days_before,))
                 rows = cursor.fetchall()
                 return [dict(row) for row in rows]
         except Exception as e:
@@ -475,24 +478,29 @@ class Database:
                     return None
                 
                 # Проверяем, активен ли ключ и не истек ли он
-                expires_at = datetime.fromisoformat(key['expires_at'].replace('Z', '+00:00'))
+                try:
+                    expires_at = datetime.fromisoformat(key['expires_at'].replace('Z', '+00:00'))
+                except ValueError:
+                    # Если формат даты некорректный, считаем ключ истекшим
+                    from datetime import timedelta
+                    expires_at = datetime.now() - timedelta(days=1)
                 is_active_and_valid = key['is_active'] == 1 and expires_at > datetime.now()
                 
                 if is_active_and_valid:
                     # Активный ключ - добавляем дни к текущей дате истечения
                     cursor.execute("""
                         UPDATE vpn_keys 
-                        SET expires_at = datetime(expires_at, '+{} days')
+                        SET expires_at = datetime(expires_at, '+' || ? || ' days')
                         WHERE id = ?
-                    """.format(days), (key_id,))
+                    """, (days, key_id))
                 else:
                     # Неактивный или истекший ключ - считаем от текущего времени
                     cursor.execute("""
                         UPDATE vpn_keys 
-                        SET expires_at = datetime('now', '+{} days'),
+                        SET expires_at = datetime('now', '+' || ? || ' days'),
                             is_active = 1
                         WHERE id = ?
-                    """.format(days), (key_id,))
+                    """, (days, key_id))
                     
                 conn.commit()
                 

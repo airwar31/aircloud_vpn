@@ -87,7 +87,8 @@ class AdminPanel:
                 await self.bot.send_message(user['telegram_id'], message.text)
                 sent += 1
                 await asyncio.sleep(0.05)  # Избегаем лимитов
-            except:
+            except Exception as e:
+                logger.error(f"Ошибка отправки сообщения пользователю {user['telegram_id']}: {e}")
                 failed += 1
                 
         await message.answer(
@@ -209,8 +210,8 @@ class AdminPanel:
                         f"🎁 Вам подарена VPN подписка на {days} дней!\n"
                         "Используйте /start для получения ключа."
                     )
-                except:
-                    pass
+                except Exception as e:
+                    logger.error(f"Ошибка отправки уведомления о подарке пользователю {user_id}: {e}")
             else:
                 await message.answer("❌ Ошибка создания подписки")
                 
@@ -277,7 +278,12 @@ class AdminPanel:
         
     async def start_polling(self):
         logger.info("Запуск админ панели...")
-        await self.dp.start_polling(self.bot)
+        try:
+            await self.dp.start_polling(self.bot)
+        except Exception as e:
+            logger.error(f"Ошибка при запуске админ панели: {e}")
+        finally:
+            await self.bot.session.close()
 
 async def main():
     admin = AdminPanel()

@@ -14,13 +14,23 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebApp
 import aiohttp
 from yookassa import Configuration, Payment
 
-# Конфигурация
-BOT_TOKEN = "YOUR_BOT_TOKEN"
-YOOKASSA_SHOP_ID = "YOUR_SHOP_ID"
-YOOKASSA_SECRET_KEY = "YOUR_SECRET_KEY"
-X_UI_URL = "http://localhost:54321"  # URL вашей панели x-ui
-X_UI_USERNAME = "admin"
-X_UI_PASSWORD = "admin"
+# Конфигурация из переменных окружения
+import os
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
+X_UI_URL = os.getenv("X_UI_URL", "http://localhost:54321")
+X_UI_USERNAME = os.getenv("X_UI_USERNAME", "admin")
+X_UI_PASSWORD = os.getenv("X_UI_PASSWORD", "admin")
+
+# Проверка обязательных переменных
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable is required")
+if not YOOKASSA_SHOP_ID:
+    raise ValueError("YOOKASSA_SHOP_ID environment variable is required")
+if not YOOKASSA_SECRET_KEY:
+    raise ValueError("YOOKASSA_SECRET_KEY environment variable is required")
 
 # Настройка ЮKassa
 Configuration.account_id = YOOKASSA_SHOP_ID
@@ -125,7 +135,7 @@ class VPNBot:
             await callback.message.edit_text(
                 f"💰 К оплате: {plan['price']}₽\n"
                 f"📦 Тариф: {plan['name']}\n"
-                f"📊 Трафик: {plan['traffic']} ГБ\n\n"
+                f"🔥 Трафик: безлимитный\n\n"
                 "Нажмите кнопку для оплаты:",
                 reply_markup=keyboard
             )
@@ -197,4 +207,95 @@ class VPNBot:
                     return None
                     
                 data = await resp.json()
-                inbounds = data.get("obj", [])\n                \n                if not inbounds:\n                    return None\n                    \n                # Берем первый активный inbound\n                inbound = next((ib for ib in inbounds if ib.get("enable")), None)\n                if not inbound:\n                    return None\n                    \n            # Создаем клиента\n            client_data = {\n                "id": str(uuid.uuid4()),\n                "email": f"user_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",\n                "limitIp": 2,\n                "totalGB": plan["traffic"] * 1024 * 1024 * 1024,  # Конвертируем в байты\n                "expiryTime": int((datetime.now() + timedelta(days=plan["days"])).timestamp() * 1000),\n                "enable": True,\n                "tgId": user_id,\n                "subId": str(uuid.uuid4())[:8]\n            }\n            \n            # Добавляем клиента к inbound\n            add_client_data = {\n                "id": inbound["id"],\n                "settings": json.dumps({\n                    "clients": [client_data]\n                })\n            }\n            \n            async with self.session.post(\n                f"{X_UI_URL}/panel/api/inbounds/addClient",\n                json=add_client_data\n            ) as resp:\n                if resp.status == 200:\n                    # Генерируем конфигурацию\n                    return self.generate_config(inbound, client_data)\n                else:\n                    logger.error(f"Ошибка создания клиента: {resp.status}")\n                    return None\n                    \n        except Exception as e:\n            logger.error(f"Ошибка создания VPN клиента: {e}")\n            return None\n            \n    def generate_config(self, inbound: Dict[str, Any], client: Dict[str, Any]) -> str:\n        """Генерация конфигурации для клиента"""\n        try:\n            settings = json.loads(inbound["settings"])\n            stream_settings = json.loads(inbound.get("streamSettings", "{}"))\n            \n            if inbound["protocol"] == "vless":\n                config = (\n                    f"vless://{client['id']}@{inbound.get('listen', '0.0.0.0')}:{inbound['port']}"\n                    f"?type={stream_settings.get('network', 'tcp')}"\n                    f"&security={stream_settings.get('security', 'none')}"\n                    f"#{client['email']}"\n                )\n            elif inbound["protocol"] == "vmess":\n                vmess_config = {\n                    "v": "2",\n                    "ps": client["email"],\n                    "add": inbound.get("listen", "0.0.0.0"),\n                    "port": inbound["port"],\n                    "id": client["id"],\n                    "aid": settings.get("alterId", 0),\n                    "net": stream_settings.get("network", "tcp"),\n                    "type": "none",\n                    "host": "",\n                    "path": "",\n                    "tls": stream_settings.get("security", "none")\n                }\n                import base64\n                config = "vmess://" + base64.b64encode(json.dumps(vmess_config).encode()).decode()\n            else:\n                config = f"Протокол {inbound['protocol']} не поддерживается"\n                \n            return config\n            \n        except Exception as e:\n            logger.error(f"Ошибка генерации конфигурации: {e}")\n            return "Ошибка генерации конфигурации"\n\nasync def main():\n    bot = VPNBot()\n    try:\n        await bot.start()\n    finally:\n        await bot.stop()\n\nif __name__ == "__main__":\n    asyncio.run(main())
+                inbounds = data.get("obj", [])
+                
+                if not inbounds:
+                    return None
+                    
+                # Берем первый активный inbound
+                inbound = next((ib for ib in inbounds if ib.get("enable")), None)
+                if not inbound:
+                    return None
+                    
+            # Создаем клиента
+            client_data = {
+                "id": str(uuid.uuid4()),
+                "email": f"user_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                "limitIp": 2,
+                "totalGB": 0,  # 0 = безлимитный трафик
+                "expiryTime": int((datetime.now() + timedelta(days=plan["days"])).timestamp() * 1000),
+                "enable": True,
+                "tgId": user_id,
+                "subId": str(uuid.uuid4())[:8]
+            }
+            
+            # Добавляем клиента к inbound
+            add_client_data = {
+                "id": inbound["id"],
+                "settings": json.dumps({
+                    "clients": [client_data]
+                })
+            }
+            
+            async with self.session.post(
+                f"{X_UI_URL}/panel/api/inbounds/addClient",
+                json=add_client_data
+            ) as resp:
+                if resp.status == 200:
+                    # Генерируем конфигурацию
+                    return self.generate_config(inbound, client_data)
+                else:
+                    logger.error(f"Ошибка создания клиента: {resp.status}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Ошибка создания VPN клиента: {e}")
+            return None
+            
+    def generate_config(self, inbound: Dict[str, Any], client: Dict[str, Any]) -> str:
+        """Генерация конфигурации для клиента"""
+        try:
+            settings = json.loads(inbound["settings"])
+            stream_settings = json.loads(inbound.get("streamSettings", "{}"))
+            
+            if inbound["protocol"] == "vless":
+                config = (
+                    f"vless://{client['id']}@{inbound.get('listen', '0.0.0.0')}:{inbound['port']}"
+                    f"?type={stream_settings.get('network', 'tcp')}"
+                    f"&security={stream_settings.get('security', 'none')}"
+                    f"#{client['email']}"
+                )
+            elif inbound["protocol"] == "vmess":
+                vmess_config = {
+                    "v": "2",
+                    "ps": client["email"],
+                    "add": inbound.get("listen", "0.0.0.0"),
+                    "port": inbound["port"],
+                    "id": client["id"],
+                    "aid": settings.get("alterId", 0),
+                    "net": stream_settings.get("network", "tcp"),
+                    "type": "none",
+                    "host": "",
+                    "path": "",
+                    "tls": stream_settings.get("security", "none")
+                }
+                import base64
+                config = "vmess://" + base64.b64encode(json.dumps(vmess_config).encode()).decode()
+            else:
+                config = f"Протокол {inbound['protocol']} не поддерживается"
+                
+            return config
+            
+        except Exception as e:
+            logger.error(f"Ошибка генерации конфигурации: {e}")
+            return "Ошибка генерации конфигурации"
+
+async def main():
+    bot = VPNBot()
+    try:
+        await bot.start()
+    finally:
+        await bot.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())

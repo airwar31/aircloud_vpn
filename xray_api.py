@@ -4,6 +4,7 @@ import uuid
 import base64
 import subprocess
 import os
+import secrets
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any
@@ -49,10 +50,16 @@ class XrayAPI:
     def restart_xray(self):
         """Перезапуск Xray"""
         try:
-            subprocess.run(["pkill", "-f", "xray"], check=False)
-            subprocess.Popen([XRAY_BINARY, "-config", XRAY_CONFIG_PATH], 
+            subprocess.run(["/usr/bin/pkill", "-f", "xray"], check=False)
+            process = subprocess.Popen(["/usr/local/bin/xray", "-config", XRAY_CONFIG_PATH], 
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            logger.info("Xray перезапущен")
+            # Проверяем, что процесс запустился
+            import time
+            time.sleep(1)
+            if process.poll() is None:
+                logger.info("Xray успешно перезапущен")
+            else:
+                logger.error("Xray не смог запуститься")
         except Exception as e:
             logger.error(f"Ошибка перезапуска Xray: {e}")
             
@@ -175,14 +182,13 @@ class XrayAPI:
     def generate_reality_keys(self) -> Dict[str, str]:
         """Генерация Reality ключей через Xray"""
         try:
-            result = subprocess.run([XRAY_BINARY, "x25519"], capture_output=True, text=True)
+            result = subprocess.run(["/usr/local/bin/xray", "x25519"], capture_output=True, text=True)
             if result.returncode == 0:
                 lines = result.stdout.strip().split('\n')
                 private_key = lines[0].split(': ')[1]
                 public_key = lines[1].split(': ')[1]
                 
                 # Генерируем короткий ID
-                import secrets
                 short_id = secrets.token_hex(1)
                 
                 return {
@@ -192,18 +198,19 @@ class XrayAPI:
                 }
             else:
                 logger.error(f"Ошибка генерации ключей: {result.stderr}")
-                # Fallback ключи
+                # Генерируем случайные fallback ключи
                 return {
-                    "private_key": "YChtgAKv3VnPgWFKlqJKXg7pHyKhZZZvqw2M8UEhzQs",
-                    "public_key": "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU",
-                    "short_id": "71"
+                    "private_key": secrets.token_urlsafe(32),
+                    "public_key": secrets.token_urlsafe(32),
+                    "short_id": secrets.token_hex(1)
                 }
         except Exception as e:
             logger.error(f"Ошибка генерации Reality ключей: {e}")
+            # Генерируем случайные fallback ключи
             return {
-                "private_key": "YChtgAKv3VnPgWFKlqJKXg7pHyKhZZZvqw2M8UEhzQs",
-                "public_key": "4J6HNMExjUwdktWwR5Bo3rrjY3raBIGvFBHyQK86kQU",
-                "short_id": "71"
+                "private_key": secrets.token_urlsafe(32),
+                "public_key": secrets.token_urlsafe(32),
+                "short_id": secrets.token_hex(1)
             }
 
 # Глобальный экземпляр API

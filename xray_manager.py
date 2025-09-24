@@ -12,6 +12,9 @@ class XrayManager:
     """Менеджер для управления Xray через API"""
     
     def __init__(self, api_url: str = "http://localhost:8080"):
+        # Проверяем и очищаем URL
+        if not api_url or not api_url.startswith(('http://', 'https://')):
+            raise ValueError("Invalid API URL provided")
         self.api_url = api_url.rstrip('/')
         self.session = None
         
@@ -25,6 +28,9 @@ class XrayManager:
             
     async def add_client(self, email: str, plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Добавление клиента"""
+        if not self.session:
+            raise RuntimeError("Session not initialized. Use async context manager.")
+            
         try:
             client_id = str(uuid.uuid4())
             expires_at = datetime.now() + timedelta(days=plan["days"])

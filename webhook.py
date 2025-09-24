@@ -10,6 +10,10 @@ from yookassa import Configuration, Payment
 from database import db
 from config import YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY
 
+# Проверка конфигурации ЮKassa
+if not YOOKASSA_SHOP_ID or not YOOKASSA_SECRET_KEY:
+    raise ValueError("YooKassa credentials are not properly configured")
+
 # Настройка ЮKassa
 Configuration.account_id = YOOKASSA_SHOP_ID
 Configuration.secret_key = YOOKASSA_SECRET_KEY
@@ -76,8 +80,10 @@ def health_check():
     return jsonify({"status": "healthy"}), 200
 
 if __name__ == '__main__':
-    # Для разработки
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # Для разработки - отключаем debug в продакшене
+    import os
+    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
     
     # Для продакшена рекомендуется использовать gunicorn:
     # gunicorn -w 4 -b 0.0.0.0:5000 webhook:app

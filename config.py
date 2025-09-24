@@ -4,11 +4,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Telegram Bot
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN environment variable is required")
 
 # ЮKassa
-YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "YOUR_SHOP_ID")
-YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "YOUR_SECRET_KEY")
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
+if not YOOKASSA_SHOP_ID:
+    raise ValueError("YOOKASSA_SHOP_ID environment variable is required")
+if not YOOKASSA_SECRET_KEY:
+    raise ValueError("YOOKASSA_SECRET_KEY environment variable is required")
 
 # Xray API
 XRAY_API_URL = os.getenv("XRAY_API_URL", "http://localhost:8080")

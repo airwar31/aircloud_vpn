@@ -28,11 +28,21 @@ mkdir -p xray-config xray-logs bot-data
 
 # Запуск контейнеров
 echo "📦 Запуск контейнеров..."
-docker-compose up -d
+if docker-compose up -d; then
+    echo "✅ Контейнеры запущены успешно"
+else
+    echo "❌ Ошибка запуска контейнеров"
+    exit 1
+fi
 
 # Проверка статуса
 echo "✅ Проверка статуса контейнеров..."
-docker-compose ps
+if docker-compose ps; then
+    echo "📊 Статус контейнеров получен"
+else
+    echo "❌ Ошибка получения статуса"
+    exit 1
+fi
 
 echo "🎉 VPN бот запущен!"
 echo "📊 Для просмотра логов: docker-compose logs -f"

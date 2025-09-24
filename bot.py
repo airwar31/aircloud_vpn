@@ -350,6 +350,10 @@ class VPNBot:
                 amount=plan["price"]
             )
             
+            if not order_id:
+                await callback.answer("❌ Ошибка создания заказа")
+                return
+            
             await state.update_data(
                 plan_id=plan_id,
                 payment_id=payment.id,
@@ -562,10 +566,14 @@ class VPNBot:
         for i, key in enumerate(vpn_keys, 1):
             # Обработка даты с учетом разных форматов
             expires_at_str = str(key['expires_at'])
-            if 'Z' in expires_at_str:
-                expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
-            else:
-                expires_at = datetime.fromisoformat(expires_at_str)
+            try:
+                if 'Z' in expires_at_str:
+                    expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+                else:
+                    expires_at = datetime.fromisoformat(expires_at_str)
+            except ValueError:
+                # Если формат даты некорректный, считаем ключ истекшим
+                expires_at = datetime.now() - timedelta(days=1)
             
             is_active = expires_at > datetime.now() and key['is_active'] == 1
             status = "✅" if is_active else "❌"
@@ -602,10 +610,14 @@ class VPNBot:
             
         # Обработка даты с учетом разных форматов
         expires_at_str = str(key['expires_at'])
-        if 'Z' in expires_at_str:
-            expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
-        else:
-            expires_at = datetime.fromisoformat(expires_at_str)
+        try:
+            if 'Z' in expires_at_str:
+                expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+            else:
+                expires_at = datetime.fromisoformat(expires_at_str)
+        except ValueError:
+            # Если формат даты некорректный, считаем ключ истекшим
+            expires_at = datetime.now() - timedelta(days=1)
             
         is_active = expires_at > datetime.now() and key['is_active'] == 1
         

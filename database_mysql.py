@@ -14,18 +14,21 @@ logger = logging.getLogger(__name__)
 
 class MySQLDatabase:
     def __init__(self):
+        # Проверяем обязательные переменные окружения
+        mysql_password = os.getenv('MYSQL_PASSWORD')
+        if not mysql_password:
+            raise ValueError("MYSQL_PASSWORD environment variable is required")
+            
         self.config = {
             'host': os.getenv('MYSQL_HOST', 'mysql'),
             'port': int(os.getenv('MYSQL_PORT', 3306)),
             'database': os.getenv('MYSQL_DATABASE', 'default_db'),
             'user': os.getenv('MYSQL_USER', 'gen_user'),
-            'password': os.getenv('MYSQL_PASSWORD'),
+            'password': mysql_password,
             'charset': 'utf8mb4',
             'collation': 'utf8mb4_unicode_ci',
             'autocommit': False
         }
-        
-
         
         # Создаем пул соединений
         try:
@@ -224,8 +227,8 @@ class MySQLDatabase:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT SUM(amount) FROM referral_earnings WHERE referrer_id = %s", (user_id,))
-                result = cursor.fetchone()[0]
-                return result or 0
+                result = cursor.fetchone()
+                return result[0] if result and result[0] else 0
         except Exception as e:
             logger.error(f"Ошибка получения выплат: {e}")
             return 0

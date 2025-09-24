@@ -45,7 +45,11 @@ async def process_gift_days(self, message: types.Message, state: FSMContext):
             return
             
         data = await state.get_data()
-        user_id = data['gift_user_id']
+        user_id = data.get('gift_user_id')
+        if not user_id:
+            await message.answer("❌ Ошибка: ID пользователя не найден")
+            await state.clear()
+            return
         
         vpn_result = await self.create_gift_vpn_client(user_id, days)
         
