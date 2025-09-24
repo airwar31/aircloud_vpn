@@ -224,16 +224,16 @@ class Database:
             return None
             
     def add_vpn_key(self, user_id: int, order_id: Optional[int], email: str, 
-                    config: str, expires_at: datetime, traffic_limit: int, device_limit: int = 1) -> bool:
+                    config: str, expires_at: datetime, traffic_limit: int) -> bool:
         """Добавление VPN ключа"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO vpn_keys 
-                    (user_id, order_id, email, config, expires_at, traffic_limit, device_limit)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (user_id, order_id, email, config, expires_at, traffic_limit, device_limit))
+                    (user_id, order_id, email, config, expires_at, traffic_limit)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (user_id, order_id, email, config, expires_at, traffic_limit))
                 conn.commit()
                 logger.info(f"VPN ключ добавлен для пользователя {user_id}")
                 return True

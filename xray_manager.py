@@ -23,7 +23,7 @@ class XrayManager:
         if self.session:
             await self.session.close()
             
-    async def add_client(self, email: str, plan: Dict[str, Any], devices: int = 1) -> Optional[Dict[str, Any]]:
+    async def add_client(self, email: str, plan: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Добавление клиента"""
         try:
             client_id = str(uuid.uuid4())
@@ -33,8 +33,7 @@ class XrayManager:
                 "email": email,
                 "id": client_id,
                 "expires_at": expires_at.isoformat(),
-                "enable": True,
-                "devices": devices
+                "enable": True
             }
             
             async with self.session.post(
@@ -74,8 +73,7 @@ class XrayManager:
                 "email": email,
                 "id": client_id,  # Используем существующий UUID
                 "expires_at": expires_at.isoformat(),
-                "enable": True,
-                "devices": 1
+                "enable": True
             }
             
             async with self.session.post(
