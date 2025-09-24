@@ -17,7 +17,7 @@ if not YOOKASSA_SECRET_KEY:
     raise ValueError("YOOKASSA_SECRET_KEY environment variable is required")
 
 # Xray API  
-XRAY_API_URL = os.getenv("XRAY_API_URL", "http://172.18.0.2:8080")
+XRAY_API_URL = os.getenv("XRAY_API_URL", "http://xray-vpn:8080")
 
 # VPN Plans
 VPN_PLANS = {

@@ -44,6 +44,7 @@ class XrayManager:
             raise RuntimeError("Session not initialized. Use async context manager.")
             
         try:
+            logger.info(f"Подключение к Xray API: {self.api_url}")
             client_id = str(uuid.uuid4())
             expires_at = datetime.now() + timedelta(days=plan["days"])
             
