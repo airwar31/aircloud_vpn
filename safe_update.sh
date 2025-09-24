@@ -13,7 +13,8 @@ echo "2. Создание бэкапа..."
 
 echo "3. Сохранение критических файлов..."
 cp .env .env.backup
-cp -r logs logs.backup
+cp -r logs logs.backup 2>/dev/null || true
+cp -r xray-config xray-config.backup 2>/dev/null || true
 
 echo "4. Обновление кода..."
 git stash  # Сохраняем локальные изменения
