@@ -71,7 +71,7 @@ services:
     env_file:
       - .env
     environment:
-      - XRAY_API_URL=http://xray-api:8080
+      - XRAY_API_URL=http://xray-vpn:8080
     volumes:
       - ./bot-data:/shared
     depends_on:
@@ -89,7 +89,7 @@ services:
     env_file:
       - .env
     environment:
-      - XRAY_API_URL=http://xray-api:8080
+      - XRAY_API_URL=http://xray-vpn:8080
     volumes:
       - ./bot-data:/shared
     depends_on:
