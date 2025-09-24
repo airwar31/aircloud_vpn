@@ -33,6 +33,8 @@ services:
     container_name: agreement-server
     ports:
       - "8081:8081"
+    environment:
+      - FLASK_ENV=production
     restart: unless-stopped
     networks:
       - vpn-network
@@ -53,6 +55,7 @@ services:
     environment:
       - SERVER_DOMAIN=air31cloud.ru
       - VPN_EXTERNAL_PORT=8444
+      - FLASK_ENV=production
     volumes:
       - ./xray-config:/etc/xray
       - ./xray-logs:/var/log/xray

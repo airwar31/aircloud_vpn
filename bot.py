@@ -527,6 +527,7 @@ class VPNBot:
                             expires_at=expires_at,
                             traffic_limit=0
                         )
+                        logger.info(f"VPN ключ добавлен в БД для пользователя {user_id}")
                         success_text = "✅ <b>Оплата прошла успешно!</b>"
                     
                     success_keyboard = InlineKeyboardMarkup(inline_keyboard=[

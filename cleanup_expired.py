@@ -3,7 +3,12 @@ import asyncio
 import logging
 import os
 from datetime import datetime
-from database_mysql import db
+# Импорт с обработкой ошибок
+try:
+    from database_mysql import db
+except Exception as e:
+    print(f"Ошибка подключения к БД: {e}")
+    exit(1)
 from xray_manager import XrayManager
 
 logging.basicConfig(level=logging.INFO)

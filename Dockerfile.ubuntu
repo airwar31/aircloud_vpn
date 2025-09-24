@@ -40,5 +40,8 @@ ENV FLASK_APP=xray_api.py
 # Открытие портов
 EXPOSE 8080 443
 
+# Создание startup скрипта
+RUN echo '#!/bin/bash\n/usr/local/bin/xray -config /etc/xray/config.json &\npython3 xray_api.py' > /app/start.sh && chmod +x /app/start.sh
+
 # Запуск
-CMD ["python3", "xray_api.py"]
+CMD ["/app/start.sh"]

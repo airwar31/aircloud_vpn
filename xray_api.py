@@ -327,4 +327,9 @@ def health():
     return jsonify({"status": "healthy"})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    import os
+    if os.getenv('FLASK_ENV') == 'production':
+        from waitress import serve
+        serve(app, host='0.0.0.0', port=8080)
+    else:
+        app.run(host='0.0.0.0', port=8080, debug=False)

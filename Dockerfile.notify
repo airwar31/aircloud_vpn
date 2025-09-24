@@ -9,6 +9,7 @@ COPY notify_expiring.py .
 COPY database.py .
 COPY database_mysql.py .
 COPY config.py .
+COPY sync_keys.py .
 
 # Создаем директорию для общей БД
 RUN mkdir -p /shared
