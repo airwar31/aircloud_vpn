@@ -410,6 +410,40 @@ class MySQLDatabase:
             logger.error(f"Ошибка сброса реферальных денег: {e}")
             return False
             
+    def get_expiring_vpn_keys(self, days_before: int = 3) -> List[Dict[str, Any]]:
+        """Получение VPN ключей, которые скоро истекут"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT v.*, u.telegram_id, u.first_name 
+                    FROM vpn_keys v
+                    JOIN users u ON v.user_id = u.telegram_id
+                    WHERE v.is_active = TRUE 
+                    AND v.expires_at > NOW()
+                    AND v.expires_at <= DATE_ADD(NOW(), INTERVAL %s DAY)
+                """, (days_before,))
+                return cursor.fetchall()
+        except Exception as e:
+            logger.error(f"Ошибка получения истекающих ключей: {e}")
+            return []
+            
+    def mark_notification_sent(self, key_id: int) -> bool:
+        """Отметить что уведомление отправлено"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO notifications (user_id, message, sent)
+                    SELECT user_id, CONCAT('Notification sent for key ', %s), TRUE
+                    FROM vpn_keys WHERE id = %s
+                """, (key_id, key_id))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка отметки уведомления: {e}")
+            return False
+            
     def has_user_agreed(self, user_id: int) -> bool:
         """Проверка согласия пользователя с соглашением"""
         try:
