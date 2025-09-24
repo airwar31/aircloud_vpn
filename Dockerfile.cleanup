@@ -7,6 +7,7 @@ RUN pip install -r requirements.txt
 
 COPY cleanup_expired.py .
 COPY database.py .
+COPY database_mysql.py .
 COPY xray_manager.py .
 COPY config.py .
 
