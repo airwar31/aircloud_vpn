@@ -565,7 +565,13 @@ class VPNBot:
             
         keyboard_buttons = []
         for i, key in enumerate(vpn_keys, 1):
-            expires_at = datetime.fromisoformat(key['expires_at'].replace('Z', '+00:00'))
+            # Обработка даты с учетом разных форматов
+            expires_at_str = str(key['expires_at'])
+            if 'Z' in expires_at_str:
+                expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+            else:
+                expires_at = datetime.fromisoformat(expires_at_str)
+            
             is_active = expires_at > datetime.now() and key['is_active'] == 1
             status = "✅" if is_active else "❌"
             keyboard_buttons.append([InlineKeyboardButton(
@@ -599,7 +605,13 @@ class VPNBot:
             await callback.answer("❌ Ключ не найден")
             return
             
-        expires_at = datetime.fromisoformat(key['expires_at'].replace('Z', '+00:00'))
+        # Обработка даты с учетом разных форматов
+        expires_at_str = str(key['expires_at'])
+        if 'Z' in expires_at_str:
+            expires_at = datetime.fromisoformat(expires_at_str.replace('Z', '+00:00'))
+        else:
+            expires_at = datetime.fromisoformat(expires_at_str)
+            
         is_active = expires_at > datetime.now() and key['is_active'] == 1
         
         if key['is_active'] == 0:
