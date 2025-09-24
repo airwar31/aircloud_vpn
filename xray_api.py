@@ -216,7 +216,10 @@ xray_api = XrayAPI()
 def add_client():
     """Добавление клиента"""
     try:
+        logger.info("Получен POST запрос на /api/clients")
         data = request.get_json()
+        logger.info(f"Данные запроса: {data}")
+        
         email = data.get('email')
         client_id = data.get('id') or data.get('client_id')
         expires_at = data.get('expires_at')
@@ -233,17 +236,21 @@ def add_client():
         if not email:
             return jsonify({"error": "Email is required"}), 400
             
+        logger.info(f"Добавляем клиента: {email}")
         config = xray_api.add_client(email, client_id, expires_at, devices)
         
-        return jsonify({
+        response = {
             "success": True,
             "config": config,
             "email": email,
             "expires_at": expires_at
-        })
+        }
+        logger.info(f"Клиент успешно добавлен: {email}")
+        return jsonify(response)
         
     except Exception as e:
         logger.error(f"Ошибка API добавления клиента: {e}")
+        return jsonify({"error": str(e)}), 500
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/clients', methods=['GET'])
