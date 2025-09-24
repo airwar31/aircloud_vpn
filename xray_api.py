@@ -8,11 +8,13 @@ import secrets
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any
+from security_filter import init_security
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+init_security(app)
 
 # Конфигурация Xray
 XRAY_CONFIG_PATH = "/etc/xray/config.json"

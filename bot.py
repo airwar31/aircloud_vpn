@@ -392,9 +392,10 @@ class VPNBot:
     async def create_payment(self, amount: int, description: str, user_id: int) -> Optional[Payment]:
         """Создание платежа в ЮKassa"""
         try:
-            payment = Payment.create({
+            # Правильный формат для YooKassa
+            payment_data = {
                 "amount": {
-                    "value": str(amount),
+                    "value": f"{amount:.2f}",  # Обязательно 2 знака после запятой
                     "currency": "RUB"
                 },
                 "confirmation": {
@@ -402,17 +403,27 @@ class VPNBot:
                     "return_url": f"https://t.me/{(await self.bot.get_me()).username}"
                 },
                 "capture": True,
-                "description": description,
-                "metadata": {
-                    "user_id": str(user_id)
-                }
-            }, uuid.uuid4())
+                "description": description[:128]  # Ограничение по длине
+            }
             
-            logger.info(f"Создан платеж {payment.id} на сумму {amount}₽ для пользователя {user_id}")
+            # Метаданные добавляем только если нужно
+            if user_id:
+                payment_data["metadata"] = {"user_id": str(user_id)}
+            
+            logger.info(f"Создание платежа на {amount}₽")
+            
+            # Используем уникальный ключ идемпотентности
+            idempotence_key = str(uuid.uuid4())
+            payment = Payment.create(payment_data, idempotence_key)
+            
+            logger.info(f"Создан платеж {payment.id}")
             return payment
             
         except Exception as e:
             logger.error(f"Ошибка создания платежа: {e}")
+            # Попробуем получить детали ошибки
+            if hasattr(e, 'response') and e.response:
+                logger.error(f"Ответ API: {e.response.text}")
             return None
             
     async def process_payment_check(self, callback: types.CallbackQuery, state: FSMContext):
