@@ -50,8 +50,12 @@ class XrayAPI:
     def restart_xray(self):
         """Перезапуск Xray"""
         try:
-            # Просто логируем, не перезапускаем
-            logger.info("Конфигурация сохранена")
+            # Отправляем сигнал USR1 для перезагрузки конфигурации
+            result = subprocess.run(["pkill", "-USR1", "-f", "/usr/local/bin/xray"], check=False)
+            if result.returncode == 0:
+                logger.info("Конфигурация Xray перезагружена")
+            else:
+                logger.info("Конфигурация сохранена")
         except Exception as e:
             logger.error(f"Ошибка: {e}")
             
