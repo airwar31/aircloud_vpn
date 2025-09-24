@@ -222,24 +222,41 @@ def add_client():
     try:
         data = request.get_json()
         email = data.get('email')
-        client_id = data.get('id')
+        client_id = data.get('id') or data.get('client_id')
         expires_at = data.get('expires_at')
         devices = data.get('devices', 1)
         
-        if not all([email, client_id, expires_at]):
-            return jsonify({"error": "Missing required fields"}), 400
+        # Если нет client_id, генерируем UUID
+        if not client_id:
+            client_id = str(uuid.uuid4())
             
-        devices = data.get('devices', 1)
+        # Если нет expires_at, устанавливаем на 30 дней
+        if not expires_at:
+            expires_at = (datetime.now() + timedelta(days=30)).isoformat()
+        
+        if not email:
+            return jsonify({"error": "Email is required"}), 400
+            
         config = xray_api.add_client(email, client_id, expires_at, devices)
         
         return jsonify({
             "success": True,
             "config": config,
-            "email": email
+            "email": email,
+            "expires_at": expires_at
         })
         
     except Exception as e:
         logger.error(f"Ошибка API добавления клиента: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/clients', methods=['GET'])
+def get_clients():
+    """Получение списка клиентов"""
+    try:
+        clients = xray_api.config["inbounds"][0]["settings"]["clients"]
+        return jsonify(clients)
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/clients/<email>', methods=['DELETE'])

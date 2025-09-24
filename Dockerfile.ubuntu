@@ -41,7 +41,7 @@ ENV FLASK_APP=xray_api.py
 EXPOSE 8080 443
 
 # Создание startup скрипта
-RUN echo '#!/bin/bash\n/usr/local/bin/xray -config /etc/xray/config.json &\npython3 xray_api.py' > /app/start.sh && chmod +x /app/start.sh
+RUN echo '#!/bin/bash\n# Запуск Flask API\npython3 xray_api.py &\n# Ожидание запуска API\nsleep 3\n# Запуск Xray\nif [ -f /etc/xray/config.json ]; then\n  /usr/local/bin/xray -config /etc/xray/config.json\nelse\n  echo "Config not found, waiting..."\n  sleep infinity\nfi' > /app/start.sh && chmod +x /app/start.sh
 
 # Запуск
 CMD ["/app/start.sh"]

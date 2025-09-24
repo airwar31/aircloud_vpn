@@ -19,7 +19,8 @@ class XrayManager:
         self.session = None
         
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        self.session = aiohttp.ClientSession(timeout=timeout)
         return self
         
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -44,7 +45,8 @@ class XrayManager:
             
             async with self.session.post(
                 f"{self.api_url}/api/clients",
-                json=client_data
+                json=client_data,
+                headers={'Content-Type': 'application/json'}
             ) as resp:
                 if resp.status == 200:
                     result = await resp.json()
@@ -55,7 +57,8 @@ class XrayManager:
                         "expires_at": expires_at
                     }
                 else:
-                    logger.error(f"Ошибка добавления клиента: {resp.status}")
+                    error_text = await resp.text()
+                    logger.error(f"Ошибка добавления клиента: {resp.status} - {error_text}")
                     return None
                     
         except Exception as e:
