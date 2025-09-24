@@ -161,9 +161,15 @@ class XrayAPI:
         try:
             result = subprocess.run(["/usr/local/bin/xray", "x25519", "-i", private_key], capture_output=True, text=True)
             if result.returncode == 0:
-                public_key = result.stdout.strip()
+                # Извлекаем только публичный ключ из вывода
+                lines = result.stdout.strip().split('\n')
+                for line in lines:
+                    if 'Public key:' in line:
+                        public_key = line.split(': ')[1]
+                        break
+                else:
+                    public_key = self.reality_keys['public_key']
             else:
-                # Fallback - используем сохраненный ключ
                 public_key = self.reality_keys['public_key']
         except:
             public_key = self.reality_keys['public_key']
