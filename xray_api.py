@@ -59,8 +59,8 @@ class XrayAPI:
     def restart_xray(self):
         """Перезапуск Xray"""
         try:
-            # Отправляем сигнал USR1 для перезагрузки конфигурации
-            result = subprocess.run(["pkill", "-USR1", "-f", "/usr/local/bin/xray"], check=False)
+            # Принудительно перезапускаем процесс Xray
+            result = subprocess.run(["pkill", "-f", "/usr/local/bin/xray"], check=False)
             if result.returncode == 0:
                 logger.info("Конфигурация Xray перезагружена")
             else:
@@ -166,8 +166,7 @@ class XrayAPI:
         short_id = self.reality_keys['short_id']
         
         config = (f"vless://{client_id}@{server_domain}:{external_port}?"
-                 f"type=tcp&security=reality&pbk={public_key}&"
-                 f"fp=chrome&sni=dl.google.com&sid={short_id}&spx=%2F&flow=xtls-rprx-vision#{email}")
+                 f"security=reality&encryption=none&pbk={public_key}&headerType=none&fp=chrome&spx=%2F&type=tcp&flow=xtls-rprx-vision&sni=dl.google.com&sid={short_id}#{email}")
         return config
         
     def get_client_stats(self, email: str) -> Dict[str, Any]:
@@ -195,9 +194,9 @@ class XrayAPI:
                 for line in lines:
                     if 'Public key:' in line:
                         return line.split(': ')[1]
-            return "fallback_public_key"
+            return "dnUx8zqE1dHV2B5qyWZDpueUySPiWIkcHI-wxYfEzhA"
         except:
-            return "fallback_public_key"
+            return "dnUx8zqE1dHV2B5qyWZDpueUySPiWIkcHI-wxYfEzhA"
             
     def generate_reality_keys(self) -> Dict[str, str]:
         """Генерация Reality ключей через Xray"""
