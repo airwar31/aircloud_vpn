@@ -1,0 +1,16 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY requirements-bot.txt requirements.txt
+RUN pip install prometheus-client psutil
+
+COPY monitoring.py .
+COPY database.py .
+COPY database_mysql.py .
+COPY xray_manager.py .
+COPY config.py .
+
+EXPOSE 8090
+
+CMD ["python", "monitoring.py"]
