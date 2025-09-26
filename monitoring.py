@@ -2,29 +2,26 @@ import asyncio
 import time
 import psutil
 import logging
+import aiohttp
 from datetime import datetime
 from prometheus_client import start_http_server, Gauge, Counter, Histogram
-from database import Database
-from xray_manager import XrayManager
 from config import XRAY_API_URL
 import os
 
 logger = logging.getLogger(__name__)
 
 # Метрики Prometheus
-active_users = Gauge('vpn_active_users_total', 'Количество активных пользователей')
-total_users = Gauge('vpn_total_users', 'Общее количество пользователей')
-expired_users = Gauge('vpn_expired_users', 'Количество истекших пользователей')
 cpu_usage = Gauge('system_cpu_percent', 'Использование CPU в процентах')
 memory_usage = Gauge('system_memory_percent', 'Использование памяти в процентах')
 disk_usage = Gauge('system_disk_percent', 'Использование диска в процентах')
 network_bytes_sent = Counter('network_bytes_sent_total', 'Отправлено байт по сети')
 network_bytes_recv = Counter('network_bytes_received_total', 'Получено байт по сети')
 api_response_time = Histogram('xray_api_response_seconds', 'Время ответа Xray API')
+api_status = Gauge('xray_api_status', 'Статус Xray API (1=работает, 0=не работает)')
 
 class MonitoringService:
     def __init__(self):
-        self.db = Database()
+        pass
         
     async def collect_metrics(self):
         """Сбор всех метрик"""
