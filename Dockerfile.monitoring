@@ -7,9 +7,6 @@ RUN pip install -r requirements.txt
 RUN pip install prometheus-client psutil
 
 COPY monitoring.py .
-COPY database.py .
-COPY database_mysql.py .
-COPY xray_manager.py .
 COPY config.py .
 
 EXPOSE 8090

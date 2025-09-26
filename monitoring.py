@@ -19,84 +19,46 @@ network_bytes_recv = Counter('network_bytes_received_total', 'Получено �
 api_response_time = Histogram('xray_api_response_seconds', 'Время ответа Xray API')
 api_status = Gauge('xray_api_status', 'Статус Xray API (1=работает, 0=не работает)')
 
-class MonitoringService:
-    def __init__(self):
-        pass
+
+
+async def collect_system_metrics():
+    """Сбор системных метрик"""
+    try:
+        cpu_usage.set(psutil.cpu_percent())
+        memory_usage.set(psutil.virtual_memory().percent)
+        disk_usage.set(psutil.disk_usage('/').percent)
         
-    async def collect_metrics(self):
-        """Сбор всех метрик"""
-        try:
-            # Системные метрики
-            cpu_usage.set(psutil.cpu_percent())
-            memory_usage.set(psutil.virtual_memory().percent)
-            disk_usage.set(psutil.disk_usage('/').percent)
-            
-            # Сетевые метрики
-            net_io = psutil.net_io_counters()
-            network_bytes_sent._value._value = net_io.bytes_sent
-            network_bytes_recv._value._value = net_io.bytes_recv
-            
-            # VPN метрики
-            self.collect_vpn_metrics()
-            
-            # Метрики API
-            await self.collect_api_metrics()
-            
-        except Exception as e:
-            logger.error(f"Ошибка сбора метрик: {e}")
-    
-    def collect_vpn_metrics(self):
-        """Сбор метрик VPN пользователей"""
-        try:
-            now = datetime.now()
-            
-            # Активные пользователи
-            active_count = self.db.execute_query(
-                "SELECT COUNT(*) as count FROM vpn_keys WHERE expires_at > %s",
-                (now,)
-            )
-            active_users.set(active_count[0]['count'] if active_count else 0)
-            
-            # Общее количество
-            total_count = self.db.execute_query("SELECT COUNT(*) as count FROM vpn_keys")
-            total_users.set(total_count[0]['count'] if total_count else 0)
-            
-            # Истекшие
-            expired_count = self.db.execute_query(
-                "SELECT COUNT(*) as count FROM vpn_keys WHERE expires_at <= %s",
-                (now,)
-            )
-            expired_users.set(expired_count[0]['count'] if expired_count else 0)
-            
-        except Exception as e:
-            logger.error(f"Ошибка сбора VPN метрик: {e}")
-    
-    async def collect_api_metrics(self):
-        """Проверка времени ответа API"""
-        try:
-            start_time = time.time()
-            async with XrayManager(XRAY_API_URL) as xray:
-                # Простой health check
-                import aiohttp
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(f"{XRAY_API_URL}/health") as resp:
-                        response_time = time.time() - start_time
-                        api_response_time.observe(response_time)
-        except Exception as e:
-            logger.error(f"Ошибка проверки API: {e}")
-            api_response_time.observe(30)  # Таймаут как максимальное время
+        net_io = psutil.net_io_counters()
+        network_bytes_sent._value._value = net_io.bytes_sent
+        network_bytes_recv._value._value = net_io.bytes_recv
+    except Exception as e:
+        logger.error(f"Ошибка сбора системных метрик: {e}")
+
+async def collect_api_metrics():
+    """Проверка API"""
+    try:
+        start_time = time.time()
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(f"{XRAY_API_URL}/health") as resp:
+                response_time = time.time() - start_time
+                api_response_time.observe(response_time)
+                api_status.set(1 if resp.status == 200 else 0)
+                logger.info(f"API статус: {resp.status}, время: {response_time:.3f}s")
+    except Exception as e:
+        logger.error(f"Ошибка проверки API: {e}")
+        api_response_time.observe(30)
+        api_status.set(0)
 
 async def main():
     """Основной цикл мониторинга"""
-    monitoring = MonitoringService()
-    
-    # Запуск HTTP сервера для Prometheus
     start_http_server(8090)
     logger.info("Мониторинг запущен на порту 8090")
     
     while True:
-        await monitoring.collect_metrics()
-        await asyncio.sleep(30)  # Сбор метрик каждые 30 секунд
+        await collect_system_metrics()
+        await collect_api_metrics()
+        await asyncio.sleep(30)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
