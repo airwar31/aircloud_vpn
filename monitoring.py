@@ -4,7 +4,7 @@ import psutil
 import logging
 from datetime import datetime
 from prometheus_client import start_http_server, Gauge, Counter, Histogram
-from database_mysql import DatabaseMySQL
+from database import Database
 from xray_manager import XrayManager
 from config import XRAY_API_URL
 import os
@@ -24,7 +24,7 @@ api_response_time = Histogram('xray_api_response_seconds', 'Время отве�
 
 class MonitoringService:
     def __init__(self):
-        self.db = DatabaseMySQL()
+        self.db = Database()
         
     async def collect_metrics(self):
         """Сбор всех метрик"""
@@ -40,7 +40,7 @@ class MonitoringService:
             network_bytes_recv._value._value = net_io.bytes_recv
             
             # VPN метрики
-            await self.collect_vpn_metrics()
+            self.collect_vpn_metrics()
             
             # Метрики API
             await self.collect_api_metrics()
@@ -48,24 +48,24 @@ class MonitoringService:
         except Exception as e:
             logger.error(f"Ошибка сбора метрик: {e}")
     
-    async def collect_vpn_metrics(self):
+    def collect_vpn_metrics(self):
         """Сбор метрик VPN пользователей"""
         try:
             now = datetime.now()
             
             # Активные пользователи
-            active_count = await self.db.execute_query(
+            active_count = self.db.execute_query(
                 "SELECT COUNT(*) as count FROM vpn_keys WHERE expires_at > %s",
                 (now,)
             )
             active_users.set(active_count[0]['count'] if active_count else 0)
             
             # Общее количество
-            total_count = await self.db.execute_query("SELECT COUNT(*) as count FROM vpn_keys")
+            total_count = self.db.execute_query("SELECT COUNT(*) as count FROM vpn_keys")
             total_users.set(total_count[0]['count'] if total_count else 0)
             
             # Истекшие
-            expired_count = await self.db.execute_query(
+            expired_count = self.db.execute_query(
                 "SELECT COUNT(*) as count FROM vpn_keys WHERE expires_at <= %s",
                 (now,)
             )
