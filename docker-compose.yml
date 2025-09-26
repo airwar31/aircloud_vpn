@@ -135,26 +135,13 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./web.yml:/etc/prometheus/web.yml
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
-    restart: unless-stopped
-    networks:
-      - vpn-network
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=AIR31CLOUD_ADMIN
-      - GF_SECURITY_ADMIN_PASSWORD=K9#mX7$pQ2@vN8&wR5!zL3*uY6^sE4
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - '--web.config.file=/etc/prometheus/web.yml'
     restart: unless-stopped
     networks:
       - vpn-network
@@ -176,4 +163,3 @@ volumes:
   xray-config:
   xray-logs:
   bot-data:
-  grafana-data:
