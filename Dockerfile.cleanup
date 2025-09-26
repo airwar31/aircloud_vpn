@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
 RUN touch /var/log/cleanup.log
 
 # Создаем скрипт для запуска с переменными окружения
-RUN echo '#!/bin/bash\ncd /app\nexport $(cat /proc/1/environ | tr "\0" "\n" | grep -E "^(MYSQL_|XRAY_|BOT_)")\n/usr/local/bin/python cleanup_expired.py >> /var/log/cleanup.log 2>&1' > /app/cleanup_with_env.sh
+RUN echo '#!/bin/bash\ncd /app\nexport MYSQL_HOST="5.129.208.199"\nexport MYSQL_USER="gen_user"\nexport MYSQL_PASSWORD="1%)aD)Gz={E}+v"\nexport MYSQL_DATABASE="default_db"\nexport MYSQL_PORT="3306"\nexport XRAY_API_URL="http://xray-vpn:8080"\n/usr/local/bin/python cleanup_expired.py >> /var/log/cleanup.log 2>&1' > /app/cleanup_with_env.sh
 RUN chmod +x /app/cleanup_with_env.sh
 
 # Добавление задачи cron (каждые 10 минут)
