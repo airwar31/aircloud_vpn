@@ -20,8 +20,12 @@ RUN apt-get update && apt-get install -y cron && rm -rf /var/lib/apt/lists/*
 # Создание лог файла
 RUN touch /var/log/cleanup.log
 
+# Создаем скрипт для запуска с переменными окружения
+RUN echo '#!/bin/bash\ncd /app\nexport $(cat /proc/1/environ | tr "\0" "\n" | grep -E "^(MYSQL_|XRAY_|BOT_)")\n/usr/local/bin/python cleanup_expired.py >> /var/log/cleanup.log 2>&1' > /app/cleanup_with_env.sh
+RUN chmod +x /app/cleanup_with_env.sh
+
 # Добавление задачи cron (каждые 10 минут)
-RUN echo "*/10 * * * * cd /app && /usr/local/bin/python cleanup_expired.py >> /var/log/cleanup.log 2>&1" | crontab -
+RUN echo "*/10 * * * * /app/cleanup_with_env.sh" | crontab -
 
 # Запуск cron и показ логов
 CMD ["sh", "-c", "cron && /usr/local/bin/python cleanup_expired.py && tail -f /var/log/cleanup.log"]

@@ -3,6 +3,19 @@ import asyncio
 import logging
 import os
 from datetime import datetime
+
+# Проверяем обязательные переменные окружения
+required_env_vars = ['MYSQL_PASSWORD', 'MYSQL_HOST', 'MYSQL_USER', 'MYSQL_DATABASE']
+missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+
+if missing_vars:
+    print(f"Отсутствуют переменные окружения: {', '.join(missing_vars)}")
+    print("Доступные переменные:")
+    for key, value in os.environ.items():
+        if 'MYSQL' in key:
+            print(f"  {key}={value}")
+    exit(1)
+
 # Импорт с обработкой ошибок
 try:
     from database_mysql import db
