@@ -136,14 +136,25 @@ class XrayManager:
             logger.error(f"Ошибка продления клиента: {e}")
             return False
             
-    async def remove_client(self, email: str) -> bool:
-        """Удаление клиента"""
-        try:
-            async with self.session.delete(f"{self.api_url}/api/clients/{email}") as resp:
-                return resp.status == 200
-        except Exception as e:
-            logger.error(f"Ошибка удаления клиента: {e}")
-            return False
+    async def remove_client(self, email: str, max_retries: int = 3) -> bool:
+        """Удаление клиента с повторными попытками"""
+        for attempt in range(max_retries):
+            try:
+                async with self.session.delete(f"{self.api_url}/api/clients/{email}") as resp:
+                    if resp.status == 200:
+                        return True
+                    elif resp.status == 404:
+                        logger.info(f"Клиент {email} уже удален")
+                        return True
+                    else:
+                        logger.warning(f"Попытка {attempt + 1}: статус {resp.status}")
+            except Exception as e:
+                logger.error(f"Попытка {attempt + 1} удаления клиента: {e}")
+                
+            if attempt < max_retries - 1:
+                await asyncio.sleep(2 ** attempt)  # Экспоненциальная задержка
+                
+        return False
             
     async def get_client_stats(self, email: str) -> Optional[Dict[str, Any]]:
         """Получение статистики клиента"""
