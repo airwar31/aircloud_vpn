@@ -10,7 +10,7 @@
       "settings": {
         "clients": [
           {
-            "id": "REPLACE_WITH_UUID_DOUBLE",
+            "id": "550e8400-e29b-41d4-a716-446655440000",
             "flow": "xtls-rprx-vision"
           }
         ],
@@ -27,12 +27,12 @@
             "dl.google.com",
             "www.google.com"
           ],
-          "privateKey": "REPLACE_WITH_PRIVATE_KEY",
+          "privateKey": "6KqOPo8gXLregjJ8wjTmkx8si7SzRqGpEe2m8cbTMGM",
           "minClientVer": "",
           "maxClientVer": "",
           "maxTimeDiff": 0,
           "shortIds": [
-            "0123456789abcdef"
+            "8xsX7Q35V-yzqig_MluXJlTwRkeSwzupDKlE6EoCHAw"
           ]
         }
       }
@@ -49,7 +49,7 @@
             "port": 443,
             "users": [
               {
-                "id": "REPLACE_WITH_UUID_DOUBLE"
+                "id": "550e8400-e29b-41d4-a716-446655440000"
               }
             ]
           }
