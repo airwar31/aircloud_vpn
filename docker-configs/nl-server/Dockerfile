@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Установка Xray
-RUN bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) install
+RUN curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh | bash -s install
 
 # Создаем директории
 RUN mkdir -p /etc/xray/certs
