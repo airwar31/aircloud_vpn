@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     wget \
     ca-certificates \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Установка Xray (без systemd требирования)
