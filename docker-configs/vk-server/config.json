@@ -11,7 +11,8 @@
         "clients": [
           {
             "id": "550e8400-e29b-41d4-a716-446655440000",
-            "flow": "xtls-rprx-vision"
+            "flow": "xtls-rprx-vision",
+            "encryption": "none"
           }
         ],
         "decryption": "none"
@@ -49,7 +50,8 @@
             "port": 443,
             "users": [
               {
-                "id": "550e8400-e29b-41d4-a716-446655440000"
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "encryption": "none"
               }
             ]
           }
