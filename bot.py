@@ -16,8 +16,21 @@ import aiohttp
 from yookassa import Configuration, Payment
 
 from config import *
-from database_mysql import db
-from xray_manager import XrayManager
+try:
+    from database_mysql import db
+except ImportError:
+    from database import db
+
+# XrayManager stub для совместимости
+class XrayManager:
+    def __init__(self, api_url):
+        self.api_url = api_url
+    
+    async def __aenter__(self):
+        return self
+    
+    async def __aexit__(self, *args):
+        pass
 
 # Настройка ЮKassa
 Configuration.account_id = YOOKASSA_SHOP_ID

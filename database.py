@@ -61,11 +61,30 @@ class Database:
                     device_limit INTEGER DEFAULT 1,
                     is_active BOOLEAN DEFAULT 1,
                     is_hidden BOOLEAN DEFAULT 0,
+                    tunnel_type TEXT DEFAULT 'single',
+                    tunnel_route TEXT DEFAULT '',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (user_id) REFERENCES users (telegram_id),
                     FOREIGN KEY (order_id) REFERENCES orders (id)
                 )
             """)
+            
+            # Добавляем поля tunnel_type и tunnel_route если их нет
+            try:
+                cursor.execute("""
+                    ALTER TABLE vpn_keys ADD COLUMN tunnel_type TEXT DEFAULT 'single'
+                """)
+            except Exception:
+                # Поле уже существует
+                pass
+                
+            try:
+                cursor.execute("""
+                    ALTER TABLE vpn_keys ADD COLUMN tunnel_route TEXT DEFAULT ''
+                """)
+            except Exception:
+                # Поле уже существует
+                pass
             
             # Добавляем поле is_hidden если его нет
             try:
@@ -227,18 +246,19 @@ class Database:
             return None
             
     def add_vpn_key(self, user_id: int, order_id: Optional[int], email: str, 
-                    config: str, expires_at: datetime, traffic_limit: int) -> bool:
+                    config: str, expires_at: datetime, traffic_limit: int,
+                    tunnel_type: str = "single", tunnel_route: str = "") -> bool:
         """Добавление VPN ключа"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO vpn_keys 
-                    (user_id, order_id, email, config, expires_at, traffic_limit)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (user_id, order_id, email, config, expires_at, traffic_limit))
+                    (user_id, order_id, email, config, expires_at, traffic_limit, tunnel_type, tunnel_route)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (user_id, order_id, email, config, expires_at, traffic_limit, tunnel_type, tunnel_route))
                 conn.commit()
-                logger.info(f"VPN ключ добавлен для пользователя {user_id}")
+                logger.info(f"VPN ключ добавлен для пользователя {user_id} (тип: {tunnel_type})")
                 return True
         except Exception as e:
             logger.error(f"Ошибка добавления VPN ключа: {e}")
@@ -653,6 +673,32 @@ class Database:
         except Exception as e:
             logger.error(f"Ошибка сброса реферальных денег: {e}")
             return False
+
+    def get_keys_by_tunnel_type(self, tunnel_type: str) -> List[Dict[str, Any]]:
+        """Получение VPN ключей по типу туннеля"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT * FROM vpn_keys 
+                    WHERE tunnel_type = ?
+                    ORDER BY created_at DESC
+                """, (tunnel_type,))
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Ошибка получения ключей по типу туннеля: {e}")
+            return []
+
+    @staticmethod
+    def is_key_expired(expires_at: datetime) -> bool:
+        """Проверка, истекла ли подписка"""
+        try:
+            if isinstance(expires_at, str):
+                expires_at = datetime.fromisoformat(expires_at)
+            return datetime.now() > expires_at
+        except Exception:
+            return True
 
 # Глобальный экземпляр базы данных
 db = Database("/shared/vpn_bot.db")

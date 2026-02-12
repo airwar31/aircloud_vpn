@@ -100,17 +100,50 @@ class AdminPanel:
         
     async def show_prices(self, callback: types.CallbackQuery):
         keyboard_buttons = []
+        
+        # Группируем планы по типу туннелей
+        single_plans = []
+        double_tunnel_plans = []
+        
         for plan_id, plan in VPN_PLANS.items():
-            keyboard_buttons.append([InlineKeyboardButton(
-                text=f"{plan['name']} - {plan['price']}₽",
-                callback_data=f"edit_price_{plan_id}"
-            )])
+            if plan.get('tunnel_type') == 'double':
+                double_tunnel_plans.append((plan_id, plan))
+            else:
+                single_plans.append((plan_id, plan))
+        
+        # Добавляем обычные планы
+        if single_plans:
+            keyboard_buttons.append([InlineKeyboardButton(text="🌐 Обычный VPN", callback_data="dummy_single")])
+            for plan_id, plan in single_plans:
+                keyboard_buttons.append([InlineKeyboardButton(
+                    text=f"  {plan['name']} - {plan['price']}₽",
+                    callback_data=f"edit_price_{plan_id}"
+                )])
+        
+        # Добавляем планы с двойным туннелем
+        if double_tunnel_plans:
+            keyboard_buttons.append([InlineKeyboardButton(text="🔗 Двойной туннель (ВК→NL)", callback_data="dummy_double")])
+            for plan_id, plan in double_tunnel_plans:
+                keyboard_buttons.append([InlineKeyboardButton(
+                    text=f"  {plan['name']} - {plan['price']}₽",
+                    callback_data=f"edit_price_{plan_id}"
+                )])
             
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
         
+        price_text = "💰 <b>Управление ценами</b>\n\n"
+        price_text += "🌐 <b>Обычные планы (одиночный туннель):</b>\n"
+        for plan_id, plan in single_plans:
+            price_text += f"  • {plan['name']}: {plan['price']}₽\n"
+        
+        price_text += "\n🔗 <b>Планы с двойным туннелем (ВК→NL):</b>\n"
+        for plan_id, plan in double_tunnel_plans:
+            price_text += f"  • {plan['name']}: {plan['price']}₽\n"
+        
+        price_text += "\nВыберите тариф для изменения цены:"
+        
         await callback.message.edit_text(
-            "💰 <b>Управление ценами</b>\n\n"
-            "Выберите тариф для изменения цены:",
+            price_text,
             reply_markup=keyboard,
             parse_mode="HTML"
         )
@@ -260,13 +293,27 @@ class AdminPanel:
     async def show_stats(self, callback: types.CallbackQuery):
         stats = db.get_stats()
         
+        # Получаем статистику по типам туннелей
+        single_tunnel_keys = db.get_keys_by_tunnel_type('single')
+        double_tunnel_keys = db.get_keys_by_tunnel_type('double')
+        
+        single_active = sum(1 for k in single_tunnel_keys if not db.is_key_expired(k['expires_at']) and k['is_active'])
+        double_active = sum(1 for k in double_tunnel_keys if not db.is_key_expired(k['expires_at']) and k['is_active'])
+        
         text = (
             "📊 <b>Статистика бота</b>\n\n"
+            "<b>Общая статистика:</b>\n"
             f"👥 Всего пользователей: {stats.get('total_users', 0)}\n"
             f"💰 Оплаченных заказов: {stats.get('paid_orders', 0)}\n"
-            f"🔑 Активных ключей: {stats.get('active_keys', 0)}\n"
             f"💵 Общая выручка: {stats.get('total_revenue', 0)}₽\n\n"
-            f"📈 Рефералы: {db.get_total_referrals()}\n"
+            
+            "<b>По типам подписок:</b>\n"
+            f"🌐 Обычный VPN активных: {single_active}\n"
+            f"🔗 Двойной туннель (ВК→NL) активных: {double_active}\n"
+            f"🔑 Всего активных ключей: {stats.get('active_keys', 0)}\n\n"
+            
+            "<b>Реферальная программа:</b>\n"
+            f"📈 Всего рефералов: {db.get_total_referrals()}\n"
             f"💸 Выплачено бонусов: {db.get_total_referral_payouts()}₽"
         )
         

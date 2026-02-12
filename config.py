@@ -21,34 +21,73 @@ XRAY_API_URL = os.getenv("XRAY_API_URL", "http://xray-vpn:8080")
 
 # VPN Plans
 VPN_PLANS = {
+    # Обычные планы (одиночный туннель)
     "1month": {
         "name": "1 месяц",
-        "price": 99,
-        "days": 30
+        "price": 250,
+        "days": 30,
+        "tunnel_type": "single"
     },
     "3months": {
         "name": "3 месяца", 
         "price": 279,
-        "days": 90
+        "days": 90,
+        "tunnel_type": "single"
     },
     "6months": {
         "name": "6 месяцев",
         "price": 499, 
-        "days": 180
+        "days": 180,
+        "tunnel_type": "single"
     },
     "1year": {
         "name": "1 год",
         "price": 899,
-        "days": 365
+        "days": 365,
+        "tunnel_type": "single"
+    },
+    # Планы с двойным туннелированием (ВК -> Нидерланды) - обход белых листов
+    "double_tunnel_1month": {
+        "name": "1 месяц (Двойной туннель ВК→NL)",
+        "price": 250,
+        "days": 30,
+        "tunnel_type": "double",
+        "route": "vk_to_nl"
+    },
+    "double_tunnel_3months": {
+        "name": "3 месяца (Двойной туннель ВК→NL)",
+        "price": 500,
+        "days": 90,
+        "tunnel_type": "double",
+        "route": "vk_to_nl"
+    },
+    "double_tunnel_6months": {
+        "name": "6 месяцев (Двойной туннель ВК→NL)",
+        "price": 800,
+        "days": 180,
+        "tunnel_type": "double",
+        "route": "vk_to_nl"
+    },
+    "double_tunnel_1year": {
+        "name": "1 год (Двойной туннель ВК→NL)",
+        "price": 1500,
+        "days": 365,
+        "tunnel_type": "double",
+        "route": "vk_to_nl"
     }
 }
 
 # Реферальная система
 REFERRAL_RATES = {
-    "1month": 20,  
-    "3months": 50, 
-    "6months": 90, 
-    "1year": 140   
+    "1month": 50,  
+    "3months": 70, 
+    "6months": 130, 
+    "1year": 200,
+    # Двойной туннель - выше ставки (обход белых листов)
+    "double_tunnel_1month": 50,
+    "double_tunnel_3months": 125,
+    "double_tunnel_6months": 200,
+    "double_tunnel_1year": 375
 }
 
 # Админы (добавьте свои Telegram ID)

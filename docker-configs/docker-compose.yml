@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  vk-server:
+    build:
+      context: ./vk-server
+      dockerfile: Dockerfile
+    container_name: vk-xray-server
+    ports:
+      - "443:443"
+    networks:
+      - vpn-network
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    volumes:
+      - ./vk-server/config.json:/etc/xray/config.json:ro
+
+  nl-server:
+    build:
+      context: ./nl-server
+      dockerfile: Dockerfile
+    container_name: nl-xray-server
+    ports:
+      - "8444:443"      # Double tunnel port
+      - "8445:8443"     # Single tunnel port
+    networks:
+      - vpn-network
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    volumes:
+      - ./nl-server/config.json:/etc/xray/config.json:ro
+      - xray-certs:/etc/xray/certs
+
+  vpn-bot:
+    build:
+      context: ./nl-server
+      dockerfile: Dockerfile
+    container_name: vpn-telegram-bot
+    depends_on:
+      - vk-server
+      - nl-server
+    networks:
+      - vpn-network
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID}
+      - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY}
+      - XRAY_API_URL=http://vk-server:8080
+      - VK_SERVER=vk-server
+      - NL_SERVER=nl-server
+      - TZ=UTC
+    volumes:
+      - ./nl-server/bot_app:/app
+      - shared-db:/shared
+    env_file:
+      - .env
+
+networks:
+  vpn-network:
+    driver: bridge
+
+volumes:
+  xray-certs:
+    driver: local
+  shared-db:
+    driver: local

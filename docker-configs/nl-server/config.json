@@ -1,0 +1,68 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "port": 443,
+      "protocol": "vless",
+      "tag": "double-tunnel-in",
+      "settings": {
+        "clients": [
+          {
+            "id": "REPLACE_WITH_UUID_DOUBLE"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "nl.vpn.example.com",
+          "rejectUnknownSni": false,
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/certs/fullchain.pem",
+              "keyFile": "/etc/xray/certs/privkey.pem"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "port": 8443,
+      "protocol": "vless",
+      "tag": "single-tunnel-in",
+      "settings": {
+        "clients": [
+          {
+            "id": "REPLACE_WITH_UUID_SINGLE"
+          }
+        ],
+        "decryption": "none"
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "tls",
+        "tlsSettings": {
+          "serverName": "nl.vpn.example.com",
+          "rejectUnknownSni": false,
+          "certificates": [
+            {
+              "certificateFile": "/etc/xray/certs/fullchain.pem",
+              "keyFile": "/etc/xray/certs/privkey.pem"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "freedom",
+      "tag": "direct",
+      "settings": {}
+    }
+  ]
+}
