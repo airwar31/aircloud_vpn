@@ -36,7 +36,7 @@ services:
   vpn-bot:
     build:
       context: ./nl-server
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.bot
     container_name: vpn-telegram-bot
     depends_on:
       - vk-server
