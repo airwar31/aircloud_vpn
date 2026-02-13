@@ -148,6 +148,16 @@ class Database:
                 )
             """)
             
+            # Таблица согласий пользователей
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_agreements (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER UNIQUE NOT NULL,
+                    agreed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users (telegram_id)
+                )
+            """)
+            
             conn.commit()
             logger.info("База данных инициализирована")
             
@@ -689,6 +699,35 @@ class Database:
         except Exception as e:
             logger.error(f"Ошибка получения ключей по типу туннеля: {e}")
             return []
+
+    def has_user_agreed(self, user_id: int) -> bool:
+        """Проверка, согласился ли пользователь с соглашением"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT 1 FROM user_agreements WHERE user_id = ?
+                """, (user_id,))
+                return cursor.fetchone() is not None
+        except Exception as e:
+            logger.error(f"Ошибка проверки согласия: {e}")
+            return False
+
+    def accept_agreement(self, user_id: int) -> bool:
+        """Сохранение согласия пользователя"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT OR REPLACE INTO user_agreements (user_id)
+                    VALUES (?)
+                """, (user_id,))
+                conn.commit()
+                logger.info(f"Пользователь {user_id} принял соглашение")
+                return True
+        except Exception as e:
+            logger.error(f"Ошибка сохранения согласия: {e}")
+            return False
 
     @staticmethod
     def is_key_expired(expires_at: datetime) -> bool:
