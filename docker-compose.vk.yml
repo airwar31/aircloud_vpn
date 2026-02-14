@@ -27,7 +27,7 @@ services:
 
   # 3xui Панель управления
   vk-xray-panel:
-    image: enwaiax/x-ui:latest
+    image: teddysun/x-ui:latest
     container_name: vk-xray-panel
     restart: unless-stopped
     networks:
@@ -36,7 +36,6 @@ services:
       - "54321:54321"   # Web панель 3xui (http://server:54321)
     volumes:
       - vk-xui-data:/etc/x-ui
-      - ./docker-configs/vk-server/config.json:/etc/x-ui/xray_config.json:ro
     environment:
       - TZ=UTC
     depends_on:
