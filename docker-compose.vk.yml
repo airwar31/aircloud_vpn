@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  # VK Xray сервер (Reality обфускация дляDouble tunnel)
+  vk-xray:
+    build:
+      context: ./docker-configs/vk-server
+      dockerfile: Dockerfile
+    container_name: vk-xray
+    restart: unless-stopped
+    networks:
+      - vpn-network
+    ports:
+      - "443:443" # Double tunnel вход (Reality обфускация)
+    volumes:
+      - ./docker-configs/vk-server:/etc/xray
+      - xray-logs:/var/log/xray
+    environment:
+      - CONFIG_PATH=/etc/xray/config.json
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/stats || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  xray-logs:
+    driver: local
+
+networks:
+  vpn-network:
+    driver: bridge
