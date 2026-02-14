@@ -9,7 +9,6 @@ services:
     ports:
       - "443:443"       # Double tunnel (от VK)
       - "8443:8443"     # Single tunnel (от клиентов)
-      - "8080:8080"     # Xray API
     networks:
       - vpn-network
     restart: unless-stopped
@@ -19,21 +18,6 @@ services:
       - ./nl-server/config.json:/etc/xray/config.json:ro
       - xray-certs:/etc/xray/certs
 
-  xray-panel:
-    image: enwaiax/x-ui:latest
-    container_name: xray-panel
-    ports:
-      - "54321:54321"   # Web панель 3xui (http://server:54321)
-    networks:
-      - vpn-network
-    restart: unless-stopped
-    environment:
-      - TZ=UTC
-    volumes:
-      - xui-data:/etc/x-ui
-    depends_on:
-      - nl-server
-
   vpn-bot:
     build:
       context: ./nl-server
@@ -41,7 +25,6 @@ services:
     container_name: vpn-telegram-bot
     depends_on:
       - nl-server
-      - xray-panel
     networks:
       - vpn-network
     restart: unless-stopped
@@ -49,7 +32,7 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID}
       - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY}
-      - XRAY_API_URL=http://xray-panel:54321
+      - XRAY_API_URL=http://nl-server:8080
       - NL_SERVER=nl-server
       - TZ=UTC
     volumes:
@@ -66,6 +49,4 @@ volumes:
   xray-certs:
     driver: local
   shared-db:
-    driver: local
-  xui-data:
     driver: local
