@@ -17,6 +17,7 @@ from yookassa import Configuration, Payment
 
 from config import *
 from database import db
+from xray_manager import XrayManager
 
 # Настройка ЮKassa
 Configuration.account_id = YOOKASSA_SHOP_ID
@@ -331,7 +332,8 @@ class VPNBot:
         
     async def process_plan_selection(self, callback: types.CallbackQuery, state: FSMContext):
         """Обработка выбора тарифа"""
-        plan_id = callback.data.split("_")[1]
+        # Парсим: plan_PLAN_ID -> берём PLAN_ID
+        plan_id = callback.data.replace("plan_", "", 1)
         plan = VPN_PLANS.get(plan_id)
         
         if not plan:
@@ -1033,9 +1035,10 @@ class VPNBot:
             
     async def process_extend_plan(self, callback: types.CallbackQuery, state: FSMContext):
         """Обработка выбора тарифа для продления"""
-        parts = callback.data.split("_")
-        key_id = int(parts[2])
-        plan_id = parts[3]
+        # Парсим: extend_plan_KEY_ID_PLAN_ID -> берём KEY_ID и PLAN_ID
+        parts = callback.data.split("_", 2)  # Разбиваем максимум на 3 части
+        key_id = int(parts[1])
+        plan_id = parts[2]  # Всё остальное - это план_id
         plan = VPN_PLANS.get(plan_id)
         
         if not plan:
