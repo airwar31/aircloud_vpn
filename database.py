@@ -56,6 +56,7 @@ class Database:
                     order_id INTEGER,
                     email TEXT NOT NULL,
                     config TEXT NOT NULL,
+                    vless_link TEXT,
                     expires_at TIMESTAMP NOT NULL,
                     traffic_limit INTEGER NOT NULL,
                     device_limit INTEGER DEFAULT 1,
@@ -68,6 +69,15 @@ class Database:
                     FOREIGN KEY (order_id) REFERENCES orders (id)
                 )
             """)
+            
+            # Добавляем поле vless_link если его нет
+            try:
+                cursor.execute("""
+                    ALTER TABLE vpn_keys ADD COLUMN vless_link TEXT
+                """)
+            except Exception:
+                # Поле уже существует
+                pass
             
             # Добавляем поля tunnel_type и tunnel_route если их нет
             try:
@@ -247,16 +257,24 @@ class Database:
             
     def add_vpn_key(self, user_id: int, order_id: Optional[int], email: str, 
                     config: str, expires_at: datetime, traffic_limit: int,
-                    tunnel_type: str = "single", tunnel_route: str = "") -> bool:
+                    tunnel_type: str = "single", tunnel_route: str = "", vless_link: str = "") -> bool:
         """Добавление VPN ключа"""
         try:
+            # Если config - это dict, сериализуем в JSON
+            if isinstance(config, dict):
+                config = json.dumps(config)
+            
+            # Если expires_at - datetime объект, конвертируем в ISO строку
+            if isinstance(expires_at, datetime):
+                expires_at = expires_at.isoformat()
+                
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO vpn_keys 
-                    (user_id, order_id, email, config, expires_at, traffic_limit, tunnel_type, tunnel_route)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (user_id, order_id, email, config, expires_at, traffic_limit, tunnel_type, tunnel_route))
+                    (user_id, order_id, email, config, vless_link, expires_at, traffic_limit, tunnel_type, tunnel_route)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (user_id, order_id, email, config, vless_link, expires_at, traffic_limit, tunnel_type, tunnel_route))
                 conn.commit()
                 logger.info(f"VPN ключ добавлен для пользователя {user_id} (тип: {tunnel_type})")
                 return True

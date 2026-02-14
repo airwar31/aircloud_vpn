@@ -215,23 +215,29 @@ class VPNBot:
                 vpn_result = await self.create_gift_vpn_client(user.id, days)
                 
                 if vpn_result:
-                    vpn_config, email, expires_at = vpn_result
+                    vless_link, email, expires_at = vpn_result
                     
                     db.add_vpn_key(
                         user_id=user.id,
                         order_id=None,
                         email=email,
-                        config=vpn_config,
+                        config="",
                         expires_at=expires_at,
-                        traffic_limit=0
+                        traffic_limit=0,
+                        tunnel_type="single",
+                        vless_link=vless_link
                     )
                     
                     await message.answer(
                         f"🎁 <b>Поздравляем! Вы активировали подарочный код!</b>\n\n"
-                        f"🔑 <b>Ваш VPN ключ:</b>\n"
-                        f"<code>{vpn_config}</code>\n\n"
                         f"⏰ <b>Действует до:</b> {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y %H:%M')}\n\n"
-                        "📱 Используйте /help для инструкции по подключению",
+                        f"🔗 <b>Ссылка для подключения:</b>\n"
+                        f"<code>{vless_link}</code>\n\n"
+                        "<b>Как подключиться:</b>\n"
+                        "1️⃣ Установите приложение Xray VPN\n"
+                        "2️⃣ Импортируйте ссылку выше\n"
+                        "3️⃣ Включите VPN\n\n"
+                        "📱 Дополнительно: /help",
                         parse_mode="HTML"
                     )
                     return
@@ -495,7 +501,7 @@ class VPNBot:
                 vpn_result = await self.create_vpn_client(user_id, plan_id, callback.from_user.username)
                 
                 if vpn_result:
-                    vpn_config, email, expires_at = vpn_result
+                    vless_link, email, expires_at, tunnel_type = vpn_result
                     
                     # Проверяем, это продление или новый ключ
                     extend_key_id = data.get("extend_key_id")
@@ -524,9 +530,11 @@ class VPNBot:
                             user_id=user_id,
                             order_id=order_id,
                             email=email,
-                            config=vpn_config,
+                            config="",
                             expires_at=expires_at,
-                            traffic_limit=0
+                            traffic_limit=0,
+                            tunnel_type=tunnel_type,
+                            vless_link=vless_link
                         )
                         logger.info(f"VPN ключ добавлен в БД для пользователя {user_id}")
                         success_text = "✅ <b>Оплата прошла успешно!</b>"
@@ -596,10 +604,10 @@ class VPNBot:
             email = f"user_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
         async with XrayManager(XRAY_API_URL) as xray:
-            result = await xray.add_client(email, {"days": plan["days"]})
+            result = await xray.add_client(email, {"days": plan["days"], "tunnel_type": plan.get("tunnel_type", "single")})
             
             if result:
-                return (result["config"], result["email"], result["expires_at"])
+                return (result["vless_link"], result["email"], result["expires_at"], result.get("tunnel_type", "single"))
             else:
                 logger.error(f"Не удалось создать VPN клиента для {email}")
                 return None
@@ -718,8 +726,12 @@ class VPNBot:
             f"📅 <b>Истекает:</b> {expires_at.strftime('%d.%m.%Y %H:%M')}\n"
             f"🔥 <b>Трафик:</b> безлимитный\n"
             f"🔘 <b>Статус:</b> {status}\n\n"
-            f"🔑 <b>Конфигурация:</b>\n"
-            f"<code>{key['config']}</code>",
+            f"� <b>Ссылка для подключения:</b>\n"
+            f"<code>{key['vless_link'] or 'Ссылка недоступна'}</code>\n\n"
+            "<b>Как подключиться:</b>\n"
+            "1️⃣ Установите приложение Xray VPN\n"
+            "2️⃣ Импортируйте ссылку выше\n"
+            "3️⃣ Включите VPN",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
@@ -884,25 +896,31 @@ class VPNBot:
             vpn_result = await self.create_gift_vpn_client(user_id, days)
             
             if vpn_result:
-                vpn_config, email, expires_at = vpn_result
+                vless_link, email, expires_at = vpn_result
                 
                 db.add_vpn_key(
                     user_id=user_id,
                     order_id=None,
                     email=email,
-                    config=vpn_config,
+                    config="",
                     expires_at=expires_at,
-                    traffic_limit=0
+                    traffic_limit=0,
+                    tunnel_type="single",
+                    vless_link=vless_link
                 )
                 
                 try:
                     await self.bot.send_message(
                         user_id,
                         f"🎁 <b>Подарок от администрации!</b>\n\n"
-                        f"🔑 <b>Ваш VPN ключ:</b>\n"
-                        f"<code>{vpn_config}</code>\n\n"
                         f"⏰ <b>Действует до:</b> {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y %H:%M')}\n\n"
-                        "📱 Используйте /help для инструкции по подключению",
+                        f"🔗 <b>Ссылка для подключения:</b>\n"
+                        f"<code>{vless_link}</code>\n\n"
+                        "<b>Как подключиться:</b>\n"
+                        "1️⃣ Установите приложение Xray VPN\n"
+                        "2️⃣ Импортируйте ссылку выше\n"
+                        "3️⃣ Включите VPN\n\n"
+                        "📱 Дополнительно: /help",
                         parse_mode="HTML"
                     )
                     
@@ -980,15 +998,20 @@ class VPNBot:
         except ValueError:
             await message.answer("❌ Неверное количество дней. Введите число.")
             
-    async def create_gift_vpn_client(self, user_id: int, days: int) -> Optional[tuple]:
+    async def create_gift_vpn_client(self, user_id: int, days: int, tunnel_type: str = "single") -> Optional[tuple]:
         """Создание подарочного VPN клиента"""
         email = f"gift_{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
         async with XrayManager(XRAY_API_URL) as xray:
-            result = await xray.add_client(email, {"days": days})
+            result = await xray.add_client(email, {
+                "days": days, 
+                "tunnel_type": tunnel_type,
+                "server": "5.129.224.166",  # NL сервер
+                "port": 8443 if tunnel_type == "single" else 443
+            })
             
             if result:
-                return (result["config"], result["email"], result["expires_at"])
+                return (result["vless_link"], result["email"], result["expires_at"])
             else:
                 logger.error(f"Не удалось создать подарочный VPN клиента для {email}")
                 return None
