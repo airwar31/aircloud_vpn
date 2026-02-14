@@ -230,7 +230,7 @@ class VPNBot:
                         f"🎁 <b>Поздравляем! Вы активировали подарочный код!</b>\n\n"
                         f"🔑 <b>Ваш VPN ключ:</b>\n"
                         f"<code>{vpn_config}</code>\n\n"
-                        f"⏰ <b>Действует до:</b> {expires_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+                        f"⏰ <b>Действует до:</b> {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y %H:%M')}\n\n"
                         "📱 Используйте /help для инструкции по подключению",
                         parse_mode="HTML"
                     )
@@ -901,7 +901,7 @@ class VPNBot:
                         f"🎁 <b>Подарок от администрации!</b>\n\n"
                         f"🔑 <b>Ваш VPN ключ:</b>\n"
                         f"<code>{vpn_config}</code>\n\n"
-                        f"⏰ <b>Действует до:</b> {expires_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+                        f"⏰ <b>Действует до:</b> {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y %H:%M')}\n\n"
                         "📱 Используйте /help для инструкции по подключению",
                         parse_mode="HTML"
                     )

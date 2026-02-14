@@ -3,6 +3,7 @@
 """
 
 import sqlite3
+import json
 import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -260,6 +261,14 @@ class Database:
                     tunnel_type: str = "single", tunnel_route: str = "") -> bool:
         """Добавление VPN ключа"""
         try:
+            # Если config - это dict, сериализуем в JSON
+            if isinstance(config, dict):
+                config = json.dumps(config)
+            
+            # Если expires_at - datetime объект, конвертируем в ISO строку
+            if isinstance(expires_at, datetime):
+                expires_at = expires_at.isoformat()
+                
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
