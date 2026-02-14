@@ -927,67 +927,53 @@ class VPNBot:
         days = data['gift_days']
         
         vpn_result = await self.create_gift_vpn_client(user_id, days, tunnel_type)
-            
-            if vpn_result:
-                vless_link, email, expires_at = vpn_result
-                
-                db.add_vpn_key(
-                    user_id=user_id,
-                    order_id=None,
-                    email=email,
-                    config="",
-                    expires_at=expires_at,
-                    traffic_limit=0,
-                    tunnel_type=tunnel_type,
-                    vless_link=vless_link
-                )
-                
+        
         if vpn_result:
-                vless_link, email, expires_at = vpn_result
-                
-                db.add_vpn_key(
-                    user_id=user_id,
-                    order_id=None,
-                    email=email,
-                    config="",
-                    expires_at=expires_at,
-                    traffic_limit=0,
-                    tunnel_type=tunnel_type,
-                    vless_link=vless_link
+            vless_link, email, expires_at = vpn_result
+            
+            db.add_vpn_key(
+                user_id=user_id,
+                order_id=None,
+                email=email,
+                config="",
+                expires_at=expires_at,
+                traffic_limit=0,
+                tunnel_type=tunnel_type,
+                vless_link=vless_link
+            )
+            
+            tunnel_name = "Двойной туннель (VK→NL)" if tunnel_type == "double" else "Одиночный туннель (NL)"
+            
+            try:
+                await self.bot.send_message(
+                    user_id,
+                    f"🎁 <b>Подарок от администрации!</b>\n\n"
+                    f"🔗 <b>Тип туннеля:</b> {tunnel_name}\n"
+                    f"⏰ <b>Действует до:</b> {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y %H:%M')}\n\n"
+                    f"🔗 <b>Ссылка для подключения:</b>\n"
+                    f"<code>{vless_link}</code>\n\n"
+                    "<b>Как подключиться:</b>\n"
+                    "1️⃣ Установите приложение Xray VPN\n"
+                    "2️⃣ Импортируйте ссылку выше\n"
+                    "3️⃣ Включите VPN\n\n"
+                    "📱 Дополнительно: /help",
+                    parse_mode="HTML"
                 )
                 
-                tunnel_name = "Двойной туннель (VK→NL)" if tunnel_type == "double" else "Одиночный туннель (NL)"
-                
-                try:
-                    await self.bot.send_message(
-                        user_id,
-                        f"🎁 <b>Подарок от администрации!</b>\n\n"
-                        f"🔗 <b>Тип туннеля:</b> {tunnel_name}\n"
-                        f"⏰ <b>Действует до:</b> {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y %H:%M')}\n\n"
-                        f"🔗 <b>Ссылка для подключения:</b>\n"
-                        f"<code>{vless_link}</code>\n\n"
-                        "<b>Как подключиться:</b>\n"
-                        "1️⃣ Установите приложение Xray VPN\n"
-                        "2️⃣ Импортируйте ссылку выше\n"
-                        "3️⃣ Включите VPN\n\n"
-                        "📱 Дополнительно: /help",
-                        parse_mode="HTML"
-                    )
-                    
-                    await callback.message.edit_text(
-                        f"✅ <b>Подарок отправлен!</b>\n\n"
-                        f"👤 Пользователь: {user_id}\n"
-                        f"🔗 Тип: {tunnel_name}\n"
-                        f"⏰ Период: {days} дней",
-                        parse_mode="HTML"
-                    )
-                except Exception as e:
-                    await callback.message.edit_text(
-                        f"❌ Ошибка отправки пользователю {user_id}: {e}\n\n"
-                        f"🔑 <b>Ключ создан:</b>\n"
-                        f"<code>{vless_link}</code>",
-                        parse_mode="HTML"
-                    )
+                await callback.message.edit_text(
+                    f"✅ <b>Подарок отправлен!</b>\n\n"
+                    f"👤 Пользователь: {user_id}\n"
+                    f"🔗 Тип: {tunnel_name}\n"
+                    f"⏰ Период: {days} дней",
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                await callback.message.edit_text(
+                    f"❌ Ошибка отправки пользователю {user_id}: {e}\n\n"
+                    f"🔑 <b>Ключ создан:</b>\n"
+                    f"<code>{vless_link}</code>",
+                    parse_mode="HTML"
+                )
         else:
             await callback.message.edit_text("❌ Ошибка создания VPN ключа")
             
