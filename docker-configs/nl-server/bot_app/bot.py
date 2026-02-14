@@ -37,7 +37,9 @@ class OrderStates(StatesGroup):
 class AdminStates(StatesGroup):
     waiting_gift_user_id = State()
     waiting_gift_days = State()
+    waiting_gift_tunnel_type = State()
     waiting_gift_link_days = State()
+    waiting_gift_link_tunnel_type = State()
     waiting_check_user_id = State()
 
 class VPNBot:
@@ -103,9 +105,17 @@ class VPNBot:
             self.process_gift_days,
             AdminStates.waiting_gift_days
         )
+        self.dp.callback_query.register(
+            self.process_gift_tunnel_type,
+            F.data.startswith("gift_tunnel_")
+        )
         self.dp.message.register(
             self.process_gift_link_days,
             AdminStates.waiting_gift_link_days
+        )
+        self.dp.callback_query.register(
+            self.process_gift_link_tunnel_type,
+            F.data.startswith("gift_link_tunnel_")
         )
         self.dp.callback_query.register(
             self.extend_key,
@@ -890,10 +900,33 @@ class VPNBot:
                 await message.answer("❌ Количество дней должно быть больше 0.")
                 return
                 
-            data = await state.get_data()
-            user_id = data['gift_user_id']
+            await state.update_data(gift_days=days)
+            await state.set_state(AdminStates.waiting_gift_tunnel_type)
             
-            vpn_result = await self.create_gift_vpn_client(user_id, days)
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔒 Одиночный туннель (Single)", callback_data="gift_tunnel_single")],
+                [InlineKeyboardButton(text="🔐 Двойной туннель (VK→NL)", callback_data="gift_tunnel_double")]
+            ])
+            
+            await message.answer(
+                f"🎁 <b>Выберите тип туннеля:</b>\\n\\n"
+                f"⏰ <b>Период:</b> {days} дней",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+        except ValueError:
+            await message.answer("❌ Неверное количество дней. Введите число.")
+
+    async def process_gift_tunnel_type(self, callback: types.CallbackQuery, state: FSMContext):
+        """Обработка выбора типа туннеля для подарка"""
+        tunnel_type = "double" if callback.data == "gift_tunnel_double" else "single"
+        await state.update_data(gift_tunnel_type=tunnel_type)
+        
+        data = await state.get_data()
+        user_id = data['gift_user_id']
+        days = data['gift_days']
+        
+        vpn_result = await self.create_gift_vpn_client(user_id, days, tunnel_type)
             
             if vpn_result:
                 vless_link, email, expires_at = vpn_result
@@ -905,14 +938,31 @@ class VPNBot:
                     config="",
                     expires_at=expires_at,
                     traffic_limit=0,
-                    tunnel_type="single",
+                    tunnel_type=tunnel_type,
                     vless_link=vless_link
                 )
+                
+        if vpn_result:
+                vless_link, email, expires_at = vpn_result
+                
+                db.add_vpn_key(
+                    user_id=user_id,
+                    order_id=None,
+                    email=email,
+                    config="",
+                    expires_at=expires_at,
+                    traffic_limit=0,
+                    tunnel_type=tunnel_type,
+                    vless_link=vless_link
+                )
+                
+                tunnel_name = "Двойной туннель (VK→NL)" if tunnel_type == "double" else "Одиночный туннель (NL)"
                 
                 try:
                     await self.bot.send_message(
                         user_id,
                         f"🎁 <b>Подарок от администрации!</b>\n\n"
+                        f"🔗 <b>Тип туннеля:</b> {tunnel_name}\n"
                         f"⏰ <b>Действует до:</b> {datetime.fromisoformat(expires_at).strftime('%d.%m.%Y %H:%M')}\n\n"
                         f"🔗 <b>Ссылка для подключения:</b>\n"
                         f"<code>{vless_link}</code>\n\n"
@@ -924,26 +974,24 @@ class VPNBot:
                         parse_mode="HTML"
                     )
                     
-                    await message.answer(
+                    await callback.message.edit_text(
                         f"✅ <b>Подарок отправлен!</b>\n\n"
                         f"👤 Пользователь: {user_id}\n"
+                        f"🔗 Тип: {tunnel_name}\n"
                         f"⏰ Период: {days} дней",
                         parse_mode="HTML"
                     )
                 except Exception as e:
-                    await message.answer(
+                    await callback.message.edit_text(
                         f"❌ Ошибка отправки пользователю {user_id}: {e}\n\n"
                         f"🔑 <b>Ключ создан:</b>\n"
-                        f"<code>{vpn_config}</code>",
+                        f"<code>{vless_link}</code>",
                         parse_mode="HTML"
                     )
-            else:
-                await message.answer("❌ Ошибка создания VPN ключа")
-                
-            await state.clear()
+        else:
+            await callback.message.edit_text("❌ Ошибка создания VPN ключа")
             
-        except ValueError:
-            await message.answer("❌ Неверное количество дней. Введите число.")
+        await state.clear()
             
     async def admin_gift_link(self, callback: types.CallbackQuery, state: FSMContext):
         """Начало создания подарочной ссылки"""
@@ -965,38 +1013,74 @@ class VPNBot:
         )
         
     async def process_gift_link_days(self, message: types.Message, state: FSMContext):
-        """Обработка создания подарочной ссылки"""
+        """Обработка дней для подарочной ссылки - показ выбора типа туннеля"""
         try:
             days = int(message.text)
             if days <= 0:
                 await message.answer("❌ Количество дней должно быть больше 0.")
                 return
                 
+            # Сохраняем дни в состояние
+            await state.update_data(gift_link_days=days)
+            
+            # Показываем выбор типа туннеля
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔐 Одиночный туннель (Single)", callback_data="gift_link_tunnel_single")],
+                [InlineKeyboardButton(text="🔒 Двойной туннель (VK→NL)", callback_data="gift_link_tunnel_double")]
+            ])
+            
+            await message.answer(
+                f"🎁 <b>Создание подарочной ссылки</b>\n\n"
+                f"📅 <b>Период:</b> {days} дней\n\n"
+                f"<b>Выберите тип туннеля:</b>",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+            
+            await state.set_state(AdminStates.waiting_gift_link_tunnel_type)
+            
+        except ValueError:
+            await message.answer("❌ Неверное количество дней. Введите число.")
+    
+    async def process_gift_link_tunnel_type(self, callback: types.CallbackQuery, state: FSMContext):
+        """Обработка выбора типа туннеля для подарочной ссылки"""
+        try:
+            data = await state.get_data()
+            days = data.get("gift_link_days", 30)
+            
+            # Определяем тип туннеля
+            tunnel_type = "double" if callback.data == "gift_link_tunnel_double" else "single"
+            
             gift_code = f"gift_{uuid.uuid4().hex[:8]}"
             
             # Сохраняем в БД
-            logger.info(f"Создаем подарочный код: {gift_code} на {days} дней")
+            logger.info(f"Создаем подарочный код: {gift_code} на {days} дней, тип: {tunnel_type}")
             if db.create_gift_link(gift_code, days):
-                logger.info(f"Подарочный код успешно сохранен в MySQL БД")
+                logger.info(f"Подарочный код успешно сохранен в БД")
                 bot_username = (await self.bot.get_me()).username
                 gift_link = f"https://t.me/{bot_username}?start={gift_code}"
                 
-                await message.answer(
+                tunnel_name = "Двойной туннель (VK→NL)" if tunnel_type == "double" else "Одиночный туннель"
+                
+                await callback.message.edit_text(
                     f"✅ <b>Подарочная ссылка создана!</b>\n\n"
                     f"🎁 <b>Период:</b> {days} дней\n"
+                    f"🔑 <b>Тип туннеля:</b> {tunnel_name}\n\n"
                     f"🔗 <b>Ссылка:</b>\n"
                     f"<code>{gift_link}</code>\n\n"
                     f"📝 <b>Код:</b> <code>{gift_code}</code>",
                     parse_mode="HTML"
                 )
             else:
-                logger.error(f"Ошибка сохранения кода {gift_code} в MySQL БД")
-                await message.answer("❌ Ошибка создания подарочной ссылки")
+                logger.error(f"Ошибка сохранения кода {gift_code} в БД")
+                await callback.message.edit_text("❌ Ошибка создания подарочной ссылки")
             
             await state.clear()
             
-        except ValueError:
-            await message.answer("❌ Неверное количество дней. Введите число.")
+        except Exception as e:
+            logger.error(f"Ошибка при обработке выбора типа туннеля для подарка: {e}")
+            await callback.message.edit_text(f"❌ Ошибка: {str(e)}")
+            await state.clear()
             
     async def create_gift_vpn_client(self, user_id: int, days: int, tunnel_type: str = "single") -> Optional[tuple]:
         """Создание подарочного VPN клиента"""

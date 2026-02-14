@@ -19,7 +19,7 @@
         "network": "tcp",
         "security": "tls",
         "tlsSettings": {
-          "serverName": "nl.vpn.example.com",
+          "serverName": "85.239.56.174",
           "rejectUnknownSni": false,
           "disableSystemRoot": false,
           "certificates": [
@@ -48,7 +48,7 @@
         "network": "tcp",
         "security": "tls",
         "tlsSettings": {
-          "serverName": "nl.vpn.example.com",
+          "serverName": "85.239.56.174",
           "rejectUnknownSni": false,
           "disableSystemRoot": false,
           "certificates": [

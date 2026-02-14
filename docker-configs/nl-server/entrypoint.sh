@@ -19,10 +19,24 @@ if [ ! -f /etc/xray/certs/fullchain.pem ]; then
     openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
         -keyout /etc/xray/certs/privkey.pem \
         -out /etc/xray/certs/fullchain.pem \
-        -subj "/C=NL/ST=Netherlands/L=Amsterdam/O=VPN/CN=nl.vpn.example.com"
+        -subj "/C=NL/ST=Netherlands/L=Amsterdam/O=VPN/CN=85.239.56.174"
     
     chown -R nobody:nogroup /etc/xray/certs
     chmod 600 /etc/xray/certs/privkey.pem
+fi
+
+# Генерируем UUID для single tunnel если еще не заменены
+echo "Preparing Xray configuration..."
+if grep -q "REPLACE_WITH_UUID_SINGLE" /etc/xray/config.json; then
+    SINGLE_UUID=$(cat /proc/sys/kernel/random/uuid)
+    sed -i "s/REPLACE_WITH_UUID_SINGLE/$SINGLE_UUID/g" /etc/xray/config.json
+    echo "Generated Single Tunnel UUID: $SINGLE_UUID"
+fi
+
+if grep -q "REPLACE_WITH_UUID_DOUBLE" /etc/xray/config.json; then
+    DOUBLE_UUID=$(cat /proc/sys/kernel/random/uuid)
+    sed -i "s/REPLACE_WITH_UUID_DOUBLE/$DOUBLE_UUID/g" /etc/xray/config.json
+    echo "Generated Double Tunnel UUID: $DOUBLE_UUID"
 fi
 
 # Запускаем Xray

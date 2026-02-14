@@ -14,9 +14,6 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# SNI нужно использовать тот же, что в сертификате на сервере
-DEFAULT_SNI = "nl.vpn.example.com"
-
 # Реальные IP адреса серверов (импортируем из config если доступен)
 try:
     from config import NL_SERVER_IP, VK_SERVER_IP
@@ -24,18 +21,38 @@ except ImportError:
     NL_SERVER_IP = os.getenv("NL_SERVER_IP", "85.239.56.174")  # NL сервер для single tunnel
     VK_SERVER_IP = os.getenv("VK_SERVER_IP", "89.208.86.167")  # VK сервер для double tunnel
 
+# SNI используем IP адрес сервера для TLS
+DEFAULT_SNI = NL_SERVER_IP
+
+# Reality параметры для double tunnel
+REALITY_CONFIG = {
+    "pbk": "dnUx8zqE1dHV2B5qyWZDpueUySPiWIkcHI-wxYfEzhA",  # Public key (из private key в конфиге)
+    "sni": "dl.google.com",
+    "fp": "chrome",
+    "spx": "%2F",
+    "sid": "",  # Short ID
+    "type": "tcp",
+    "flow": "xtls-rprx-vision"
+}
+
 def generate_vless_link(uuid: str, server: str, port: int, email: str, 
-                       security: str = "tls", sni: str = DEFAULT_SNI,
                        tunnel_type: str = "single") -> str:
     """Генерация VLESS ссылки для клиента"""
     
-    # Базовые параметры для Reality/TLS
     if tunnel_type == "double":
-        # Double tunnel через VK к NL
-        params = f"security=reality&flow=xtls-rprx-vision&sni={sni}"
+        # Double tunnel через VK с Reality обфускацией
+        params = (f"security=reality&encryption=none"
+                 f"&pbk={REALITY_CONFIG['pbk']}"
+                 f"&headerType=none"
+                 f"&fp={REALITY_CONFIG['fp']}"
+                 f"&spx={REALITY_CONFIG['spx']}"
+                 f"&type={REALITY_CONFIG['type']}"
+                 f"&flow={REALITY_CONFIG['flow']}"
+                 f"&sni={REALITY_CONFIG['sni']}"
+                 f"&sid={REALITY_CONFIG['sid']}")
     else:
-        # Single tunnel прямо в NL
-        params = f"security=tls&sni={sni}"
+        # Single tunnel прямо в NL с TLS
+        params = "security=tls&encryption=none&type=tcp"
     
     # Формируем ссылку
     link = f"vless://{uuid}@{server}:{port}?{params}#{quote(email)}"
@@ -73,7 +90,7 @@ class XrayManager:
                 # Для double tunnel используем VK сервер
                 server_ip = VK_SERVER_IP
                 port = 443
-                sni = "vk.vpn.example.com"
+                sni = VK_SERVER_IP
             else:
                 # Для single tunnel используем NL сервер
                 server_ip = NL_SERVER_IP

@@ -24,6 +24,17 @@ except ImportError:
 
 # XrayManager для генерации VLESS ссылок
 
+# Reality параметры для double tunnel
+REALITY_CONFIG = {
+    "pbk": "dnUx8zqE1dHV2B5qyWZDpueUySPiWIkcHI-wxYfEzhA",
+    "sni": "dl.google.com",
+    "fp": "chrome",
+    "spx": "%2F",
+    "sid": "",
+    "type": "tcp",
+    "flow": "xtls-rprx-vision"
+}
+
 class XrayManager:
     def __init__(self, api_url):
         self.api_url = api_url
@@ -46,14 +57,24 @@ class XrayManager:
             if tunnel_type == "double":
                 server_ip = VK_SERVER_IP
                 port = 443
-                sni = "vk.vpn.example.com"
+                # Reality ссылка с полными параметрами
+                params = (f"security=reality&encryption=none"
+                         f"&pbk={REALITY_CONFIG['pbk']}"
+                         f"&headerType=none"
+                         f"&fp={REALITY_CONFIG['fp']}"
+                         f"&spx={REALITY_CONFIG['spx']}"
+                         f"&type={REALITY_CONFIG['type']}"
+                         f"&flow={REALITY_CONFIG['flow']}"
+                         f"&sni={REALITY_CONFIG['sni']}"
+                         f"&sid={REALITY_CONFIG['sid']}")
             else:
                 server_ip = NL_SERVER_IP
                 port = 8443
-                sni = "nl.vpn.example.com"
+                # TLS ссылка для single tunnel
+                params = "security=tls&encryption=none&type=tcp"
             
             # Генерируем VLESS ссылку
-            vless_link = f"vless://{client_uuid}@{server_ip}:{port}?security=tls&sni={sni}#{quote(email)}"
+            vless_link = f"vless://{client_uuid}@{server_ip}:{port}?{params}#{quote(email)}"
             
             return {
                 "uuid": client_uuid,
