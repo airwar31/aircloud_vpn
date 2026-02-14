@@ -1,29 +1,14 @@
 version: '3.8'
 
 services:
-  vk-server:
-    build:
-      context: ./vk-server
-      dockerfile: Dockerfile
-    container_name: vk-xray-server
-    ports:
-      - "443:443"
-    networks:
-      - vpn-network
-    restart: unless-stopped
-    environment:
-      - TZ=UTC
-    volumes:
-      - ./vk-server/config.json:/etc/xray/config.json:ro
-
   nl-server:
     build:
       context: ./nl-server
       dockerfile: Dockerfile
     container_name: nl-xray-server
     ports:
-      - "8444:443"      # Double tunnel port
-      - "8445:8443"     # Single tunnel port
+      - "443:443"       # Double tunnel (от VK)
+      - "8443:8443"     # Single tunnel (от клиентов)
     networks:
       - vpn-network
     restart: unless-stopped
@@ -39,7 +24,6 @@ services:
       dockerfile: Dockerfile.bot
     container_name: vpn-telegram-bot
     depends_on:
-      - vk-server
       - nl-server
     networks:
       - vpn-network
@@ -48,8 +32,7 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID}
       - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY}
-      - XRAY_API_URL=http://vk-server:8080
-      - VK_SERVER=vk-server
+      - XRAY_API_URL=http://nl-server:8080
       - NL_SERVER=nl-server
       - TZ=UTC
     volumes:
