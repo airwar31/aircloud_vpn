@@ -713,7 +713,7 @@ class Database:
             logger.error(f"Ошибка проверки согласия: {e}")
             return False
 
-    def accept_agreement(self, user_id: int) -> bool:
+    def accept_user_agreement(self, user_id: int) -> bool:
         """Сохранение согласия пользователя"""
         try:
             with self.get_connection() as conn:
