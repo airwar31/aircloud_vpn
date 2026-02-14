@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # VK Xray сервер (Reality обфускация дляDouble tunnel)
+  # VK Xray сервер (Reality обфускация для Double tunnel)
   vk-xray:
     build:
       context: ./docker-configs/vk-server
@@ -11,21 +11,41 @@ services:
     networks:
       - vpn-network
     ports:
-      - "443:443" # Double tunnel вход (Reality обфускация)
+      - "443:443"       # Double tunnel вход (Reality обфускация)
+      - "8080:8080"     # Xray API
     volumes:
-      - ./docker-configs/vk-server:/etc/xray
-      - xray-logs:/var/log/xray
+      - ./docker-configs/vk-server/config.json:/etc/xray/config.json:ro
+      - xray-certs:/etc/xray/certs
     environment:
-      - CONFIG_PATH=/etc/xray/config.json
+      - TZ=UTC
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/api/stats || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/stats"] || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 
+  # 3xui Панель управления
+  vk-xray-panel:
+    image: enwaiax/x-ui:latest
+    container_name: vk-xray-panel
+    restart: unless-stopped
+    networks:
+      - vpn-network
+    ports:
+      - "54321:54321"   # Web панель 3xui (http://server:54321)
+    volumes:
+      - vk-xui-data:/etc/x-ui
+      - ./docker-configs/vk-server/config.json:/etc/x-ui/xray_config.json:ro
+    environment:
+      - TZ=UTC
+    depends_on:
+      - vk-xray
+
 volumes:
-  xray-logs:
+  xray-certs:
+    driver: local
+  vk-xui-data:
     driver: local
 
 networks:

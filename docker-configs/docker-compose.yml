@@ -9,6 +9,7 @@ services:
     ports:
       - "443:443"       # Double tunnel (от VK)
       - "8443:8443"     # Single tunnel (от клиентов)
+      - "8080:8080"     # Xray API
     networks:
       - vpn-network
     restart: unless-stopped
@@ -17,6 +18,24 @@ services:
     volumes:
       - ./nl-server/config.json:/etc/xray/config.json:ro
       - xray-certs:/etc/xray/certs
+
+  xray-panel:
+    image: enwaiax/x-ui:latest
+    container_name: xray-panel
+    ports:
+      - "54321:54321"   # Web панель 3xui
+      - "443:443"       # VLESS
+      - "8443:8443"     # VLESS
+    networks:
+      - vpn-network
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    volumes:
+      - xui-data:/etc/x-ui
+      - ./nl-server/config.json:/etc/x-ui/xray_config.json:ro
+    depends_on:
+      - nl-server
 
   vpn-bot:
     build:
@@ -49,4 +68,6 @@ volumes:
   xray-certs:
     driver: local
   shared-db:
+    driver: local
+  xui-data:
     driver: local
