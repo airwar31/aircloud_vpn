@@ -90,12 +90,10 @@ class XrayManager:
                 # Для double tunnel используем VK сервер
                 server_ip = VK_SERVER_IP
                 port = 443
-                sni = VK_SERVER_IP
             else:
                 # Для single tunnel используем NL сервер
                 server_ip = NL_SERVER_IP
                 port = 8443
-                sni = DEFAULT_SNI
             
             # Генерируем рабочую VLESS ссылку
             vless_link = generate_vless_link(
@@ -103,7 +101,6 @@ class XrayManager:
                 server=server_ip,
                 port=port,
                 email=email,
-                sni=sni,
                 tunnel_type=tunnel_type
             )
             
