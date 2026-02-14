@@ -2,9 +2,10 @@ import asyncio
 import logging
 import json
 import uuid
-import base64
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
+from uuid import uuid4
+from urllib.parse import quote
 
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -21,7 +22,8 @@ try:
 except ImportError:
     from database import db
 
-# XrayManager stub для совместимости
+# XrayManager для генерации VLESS ссылок
+
 class XrayManager:
     def __init__(self, api_url):
         self.api_url = api_url
@@ -31,6 +33,39 @@ class XrayManager:
     
     async def __aexit__(self, *args):
         pass
+    
+    async def add_client(self, email: str, config: dict):
+        """Генерация VLESS ссылки для клиента"""
+        try:
+            client_uuid = str(uuid4())
+            days = config.get("days", 30)
+            expires_at = (datetime.now() + timedelta(days=days)).isoformat()
+            tunnel_type = config.get("tunnel_type", "single")
+            
+            # Определяем правильный сервер IP на основе типа туннеля
+            if tunnel_type == "double":
+                server_ip = VK_SERVER_IP
+                port = 443
+                sni = "vk.vpn.example.com"
+            else:
+                server_ip = NL_SERVER_IP
+                port = 8443
+                sni = "nl.vpn.example.com"
+            
+            # Генерируем VLESS ссылку
+            vless_link = f"vless://{client_uuid}@{server_ip}:{port}?security=tls&sni={sni}#{quote(email)}"
+            
+            return {
+                "uuid": client_uuid,
+                "email": email,
+                "expires_at": expires_at,
+                "vless_link": vless_link,
+                "tunnel_type": tunnel_type,
+                "config": ""
+            }
+        except Exception as e:
+            logger.error(f"Ошибка создания клиента: {e}")
+            return None
 
 # Настройка ЮKassa
 Configuration.account_id = YOOKASSA_SHOP_ID

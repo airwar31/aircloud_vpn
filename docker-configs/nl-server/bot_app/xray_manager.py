@@ -10,12 +10,22 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from uuid import uuid4
 from urllib.parse import quote
+import os
 
 logger = logging.getLogger(__name__)
 
+# SNI нужно использовать тот же, что в сертификате на сервере
+DEFAULT_SNI = "nl.vpn.example.com"
+
+# Реальные IP адреса серверов (импортируем из config если доступен)
+try:
+    from config import NL_SERVER_IP, VK_SERVER_IP
+except ImportError:
+    NL_SERVER_IP = os.getenv("NL_SERVER_IP", "85.239.56.174")  # NL сервер для single tunnel
+    VK_SERVER_IP = os.getenv("VK_SERVER_IP", "89.208.86.167")  # VK сервер для double tunnel
 
 def generate_vless_link(uuid: str, server: str, port: int, email: str, 
-                       security: str = "reality", sni: str = "google.com",
+                       security: str = "tls", sni: str = DEFAULT_SNI,
                        tunnel_type: str = "single") -> str:
     """Генерация VLESS ссылки для клиента"""
     
@@ -57,15 +67,26 @@ class XrayManager:
             
             # Тип туннеля
             tunnel_type = config.get("tunnel_type", "single")
-            server = config.get("server", "nl-server")
-            port = config.get("port", 8443 if tunnel_type == "single" else 443)
+            
+            # Определяем правильный сервер IP на основе типа туннеля
+            if tunnel_type == "double":
+                # Для double tunnel используем VK сервер
+                server_ip = VK_SERVER_IP
+                port = 443
+                sni = "vk.vpn.example.com"
+            else:
+                # Для single tunnel используем NL сервер
+                server_ip = NL_SERVER_IP
+                port = 8443
+                sni = DEFAULT_SNI
             
             # Генерируем рабочую VLESS ссылку
             vless_link = generate_vless_link(
                 uuid=client_uuid,
-                server=server,
+                server=server_ip,
                 port=port,
                 email=email,
+                sni=sni,
                 tunnel_type=tunnel_type
             )
             

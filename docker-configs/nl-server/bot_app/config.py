@@ -19,6 +19,10 @@ if not YOOKASSA_SECRET_KEY:
 # Xray API  
 XRAY_API_URL = os.getenv("XRAY_API_URL", "http://xray-vpn:8080")
 
+# Реальные IP адреса серверов для VLESS ссылок
+NL_SERVER_IP = os.getenv("NL_SERVER_IP", "85.239.56.174")  # NL сервер для single tunnel
+VK_SERVER_IP = os.getenv("VK_SERVER_IP", "89.208.86.167")  # VK сервер для double tunnel
+
 # VPN Plans
 VPN_PLANS = {
     # Обычные планы (одиночный туннель)

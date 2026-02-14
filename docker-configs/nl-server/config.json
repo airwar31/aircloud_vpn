@@ -21,10 +21,12 @@
         "tlsSettings": {
           "serverName": "nl.vpn.example.com",
           "rejectUnknownSni": false,
+          "disableSystemRoot": false,
           "certificates": [
             {
               "certificateFile": "/etc/xray/certs/fullchain.pem",
-              "keyFile": "/etc/xray/certs/privkey.pem"
+              "keyFile": "/etc/xray/certs/privkey.pem",
+              "usage": "encipherment"
             }
           ]
         }
@@ -48,10 +50,12 @@
         "tlsSettings": {
           "serverName": "nl.vpn.example.com",
           "rejectUnknownSni": false,
+          "disableSystemRoot": false,
           "certificates": [
             {
               "certificateFile": "/etc/xray/certs/fullchain.pem",
-              "keyFile": "/etc/xray/certs/privkey.pem"
+              "keyFile": "/etc/xray/certs/privkey.pem",
+              "usage": "encipherment"
             }
           ]
         }
