@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Установка зависимостей
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Установка Python пакетов
+RUN pip install --no-cache-dir \
+    aiogram==3.0.0 \
+    aiohttp==3.9.1 \
+    python-dotenv==1.0.0 \
+    aiosqlite==3.0.1
+
+# Копируем код бота
+COPY . .
+
+# Запуск бота
+CMD ["python3", "bot.py"]

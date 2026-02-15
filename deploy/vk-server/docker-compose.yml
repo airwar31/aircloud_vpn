@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # 3xui панель для управления Xray на VK (Reality протокол)
+  xray-panel:
+    image: teddysun/x-ui:latest
+    container_name: vk-xray-panel
+    restart: unless-stopped
+    networks:
+      - vpn-net
+    ports:
+      - "54321:54321"  # Web UI (http://server:54321)
+      - "443:443"      # VLESS Reality inbound
+    volumes:
+      - xui-data:/etc/x-ui
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:54321/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  vpn-net:
+    driver: bridge
+
+volumes:
+  xui-data:
+    driver: local

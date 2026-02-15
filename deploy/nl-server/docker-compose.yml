@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # 3xui панель для управления Xray
+  xray-panel:
+    image: teddysun/x-ui:latest
+    container_name: nl-xray-panel
+    restart: unless-stopped
+    networks:
+      - vpn-net
+    ports:
+      - "54321:54321"  # Web UI (http://server:54321)
+    volumes:
+      - xui-data:/etc/x-ui
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:54321/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Telegram бот для управления VPN
+  vpn-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    container_name: vpn-telegram-bot
+    restart: unless-stopped
+    networks:
+      - vpn-net
+    depends_on:
+      xray-panel:
+        condition: service_healthy
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - XRAY_HOST=xray-panel
+      - XRAY_PORT=54321
+      - XRAY_USERNAME=admin
+      - XRAY_PASSWORD=admin
+      - NL_SERVER_IP=85.239.56.174
+      - VK_SERVER_IP=89.208.86.167
+      - TZ=UTC
+    volumes:
+      - ./bot_app:/app
+      - bot-db:/app/db
+    env_file:
+      - .env
+    working_dir: /app
+    command: python3 bot.py
+
+networks:
+  vpn-net:
+    driver: bridge
+
+volumes:
+  xui-data:
+    driver: local
+  bot-db:
+    driver: local

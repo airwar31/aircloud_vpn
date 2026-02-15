@@ -1,0 +1,34 @@
+# Core Bot Framework
+aiogram==3.0.0
+aiohttp==3.9.1
+python-dotenv==1.0.0
+
+# Database
+aiosqlite==3.0.1
+
+# Payment Systems
+requests==2.31.0
+
+# Async HTTP
+httpx==0.25.0
+
+# Cryptography for webhook validation
+cryptography==41.0.5
+
+# Utilities
+pydantic==2.4.2
+python-dateutil==2.8.2
+
+# Monitoring/Logging (optional but recommended)
+python-json-logger==2.0.7
+
+# Web server for webhooks (aiohttp already included above)
+
+# Cryptocurrency (optional)
+# For monitoring blockchain if needed:
+# web3==6.11.1
+# ton==0.5.3
+
+# API clients (optional)
+# For monitoring services:
+# requests==2.31.0
