@@ -1,0 +1,147 @@
+.page {
+  padding: 0 16px 80px;
+}
+
+/* ── Shared ── */
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--sub);
+  font-size: 13px;
+  padding: 8px 0;
+  margin-bottom: 4px;
+  transition: color 0.15s;
+}
+
+.backBtn:hover { color: var(--text); }
+
+.actionBtn {
+  width: 100%;
+  padding: 15px;
+  border: none;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  transition: opacity 0.15s;
+  margin-top: 8px;
+}
+
+.actionBtn:active { opacity: 0.85; }
+.actionBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.actionBtn.green { background: var(--accent); color: #fff; }
+.actionBtn.blue  { background: var(--blue); color: #111; }
+
+/* ── Plan cards ── */
+.planCard {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 10px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.planCard:active { transform: scale(0.98); }
+.planCard.selected { border-color: var(--accent); }
+
+.planHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.planIcon { font-size: 28px; line-height: 1; }
+.planName { font-weight: 700; font-size: 15px; }
+.planTagline { font-size: 12px; color: var(--sub); margin-top: 2px; }
+.planPrice { font-size: 13px; color: var(--accent); font-weight: 600; margin-top: 6px; }
+
+/* ── Duration grid ── */
+.durGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.durBtn {
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.durBtn:active { transform: scale(0.97); }
+.durBtn.selected { border-color: var(--accent); }
+
+.durPeriod { font-size: 13px; font-weight: 600; }
+.durPrice  { font-size: 12px; color: var(--sub); margin-top: 2px; }
+.durBadge  { font-size: 10px; color: var(--accent); margin-top: 2px; }
+
+/* ── Summary card ── */
+.summaryCard {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 14px;
+}
+
+.summaryVal { font-weight: 600; }
+
+.summaryTotal {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 10px;
+  font-size: 16px;
+}
+
+/* ── Payment methods ── */
+.payMethod {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--card);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.payMethod:active { transform: scale(0.98); }
+.payMethod.selected { border-color: var(--accent); }
+
+.payMethodIcon { font-size: 26px; line-height: 1; }
+.payMethodName { font-weight: 600; font-size: 14px; }
+.payMethodDesc { font-size: 12px; color: var(--sub); margin-top: 2px; }
+
+/* ── Result ── */
+.resultCard {
+  background: var(--card);
+  border-radius: 16px;
+  padding: 40px 24px;
+  border: 1px solid var(--border);
+  text-align: center;
+  margin-top: 8px;
+}
+
+.resultIcon { font-size: 52px; margin-bottom: 12px; }
+.resultTitle { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.resultDesc { font-size: 13px; color: var(--sub); line-height: 1.6; margin-bottom: 20px; }

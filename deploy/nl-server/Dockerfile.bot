@@ -1,0 +1,30 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Установка зависимостей
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Установка PYTHONPATH
+ENV PYTHONPATH=/app:$PYTHONPATH
+
+# Копируем requirements сначала (для кэширования слоёв)
+COPY requirements-payments.txt /app/requirements-payments.txt
+
+# Установка Python пакетов
+RUN pip install --no-cache-dir -r /app/requirements-payments.txt
+
+# Копируем все файлы из текущей папки
+COPY . /app/
+
+# Создаём директорию для базы данных
+RUN mkdir -p /app/db
+
+# Проверяем структуру файлов
+RUN ls -la /app/bot_app/ && python3 -c "from bot_app.xray_api import XrayAPI; from bot_app.database import Database; from bot_app.config import TUNNEL_PRICES; print('All imports OK')"
+
+# Запуск бота
+CMD ["python3", "-m", "bot_app.bot"]

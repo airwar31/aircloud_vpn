@@ -1,0 +1,43 @@
+.page {
+  padding: 0 16px 86px;
+}
+
+.hero {
+  background: linear-gradient(135deg, rgba(87, 169, 255, 0.2), rgba(64, 197, 123, 0.16));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.heroTitle {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.heroText {
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--sub);
+  line-height: 1.5;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.row {
+  color: var(--sub);
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 4px 0;
+}
+
+.row::before {
+  content: '• ';
+  color: var(--text);
+}
+

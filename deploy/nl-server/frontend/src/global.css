@@ -1,0 +1,77 @@
+:root {
+  --bg: #07131f;
+  --card: #102234;
+  --card2: #0d1d2d;
+  --border: rgba(185, 212, 238, 0.16);
+  --border-hover: rgba(185, 212, 238, 0.28);
+  --text: #f3f8ff;
+  --sub: #9db1c7;
+  --sub2: #6f89a5;
+  --accent: #40c57b;
+  --accent-dim: rgba(64, 197, 123, 0.14);
+  --accent-border: rgba(64, 197, 123, 0.28);
+  --blue: #57a9ff;
+  --blue-dim: rgba(87, 169, 255, 0.1);
+  --blue-border: rgba(87, 169, 255, 0.28);
+  --orange: #ffb84d;
+  --red: #ff6b6b;
+}
+
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  font-family: 'Manrope', 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  background:
+    radial-gradient(1200px 400px at 10% -10%, rgba(64, 197, 123, 0.2), transparent 55%),
+    radial-gradient(900px 380px at 100% -5%, rgba(87, 169, 255, 0.2), transparent 60%),
+    var(--tg-theme-bg-color, var(--bg));
+  color: var(--tg-theme-text-color, var(--text));
+  min-height: 100svh;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-hover);
+  border-radius: 3px;
+}
+
+.section-label {
+  font-size: 11px;
+  color: var(--sub2);
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  margin: 20px 0 8px;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+}
+

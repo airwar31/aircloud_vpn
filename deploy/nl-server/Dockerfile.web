@@ -1,0 +1,32 @@
+# ── Stage 1: Build React frontend ──────────────────────────────────────────
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /frontend
+
+# Cache deps separately from source
+COPY frontend/package*.json ./
+RUN npm install
+
+COPY frontend/ ./
+RUN npm run build
+
+# ── Stage 2: Python web service ─────────────────────────────────────────────
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONPATH=/app
+
+COPY requirements-web.txt /app/requirements-web.txt
+RUN pip install --no-cache-dir -r /app/requirements-web.txt
+
+COPY web_app/ /app/web_app/
+
+# Copy built React app into the static/dist folder served by FastAPI
+COPY --from=frontend-builder /frontend/dist /app/web_app/static/dist
+
+RUN mkdir -p /app/db
+
+CMD ["uvicorn", "web_app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

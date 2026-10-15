@@ -1,0 +1,59 @@
+# Environment variables & secrets
+.env
+*.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Sensitive keys and certificates
+*.pem
+*.key
+*.cert
+*.crt
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+data/
+db/
+
+# Logs
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.Python
+venv/
+.venv/
+env/
+.env/
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# Docker
+.docker/
+
+# Exported metrics & migration dumps
+*.json.bak
+baseline_metrics.json
+remnawave_users.json
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

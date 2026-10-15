@@ -1,0 +1,52 @@
+.card {
+  background: var(--card);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.desc {
+  font-size: 12px;
+  color: var(--sub);
+  margin-top: 2px;
+}
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.expire {
+  color: var(--sub);
+}
+
+.days {
+  font-weight: 600;
+}
+
+.days.ok   { color: var(--accent); }
+.days.warn { color: var(--orange); }
+.days.bad  { color: var(--red); }

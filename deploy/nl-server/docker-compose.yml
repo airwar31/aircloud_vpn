@@ -1,0 +1,90 @@
+services:
+  # 3xui панель для управления Xray
+  xray-panel:
+    image: ghcr.io/mhsanaei/3x-ui:latest
+    container_name: nl-xray-panel
+    restart: unless-stopped
+    networks:
+      - vpn-net
+    ports:
+      - "54321:2053"   # Web UI (http://server:54321)
+      - "8443:8443"    # VLESS Single tunnel (TLS, direct clients)
+      - "443:443"      # VLESS Double tunnel (TLS, receives from VK)
+    volumes:
+      - xui-data:/etc/x-ui
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:2053/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Telegram бот для управления VPN
+  vpn-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    container_name: vpn-telegram-bot
+    restart: unless-stopped
+    networks:
+      - vpn-net
+    depends_on:
+      xray-panel:
+        condition: service_healthy
+    environment:
+      - PYTHONPATH=/app
+      - XRAY_HOST=xray-panel
+      - XRAY_PORT=2053
+      - DB_PATH=/app/db/users.db
+      - TZ=UTC
+    volumes:
+      - bot-db:/app/db
+    env_file:
+      - .env
+    working_dir: /app
+    command: python3 -m bot_app.bot
+
+  # Веб-сервис: Subscription API, Mini App, Landing
+  vpn-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    container_name: vpn-web
+    restart: unless-stopped
+    networks:
+      - vpn-net
+    ports:
+      - "8000:8000"    # Subscription API + Web
+    depends_on:
+      - vpn-bot
+    environment:
+      - DB_PATH=/app/db/users.db
+      - TZ=UTC
+    volumes:
+      - bot-db:/app/db  # Общая БД с ботом (read)
+    env_file:
+      - .env   # BOT_TOKEN, YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY
+
+  # Cloudflare Quick Tunnel — бесплатный HTTPS URL для теста Mini App
+  # URL появится в логах: docker-compose logs cloudflare-tunnel
+  cloudflare-tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: vpn-cloudflare-tunnel
+    restart: unless-stopped
+    networks:
+      - vpn-net
+    depends_on:
+      - vpn-web
+    command: tunnel --no-autoupdate --url http://vpn-web:8000
+
+networks:
+  vpn-net:
+    driver: bridge
+
+volumes:
+  xui-data:
+    driver: local
+  bot-db:
+    driver: local
