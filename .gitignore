@@ -47,6 +47,7 @@ dist-ssr/
 *.json.bak
 baseline_metrics.json
 remnawave_users.json
+GITHUB_PROFILE_README.md
 
 # IDE & Editor files
 .vscode/
