@@ -6,7 +6,6 @@
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![Xray-core](https://img.shields.io/badge/Protocol-VLESS%20%2B%20Reality-blueviolet?style=for-the-badge)](https://github.com/XTLS/Xray-core)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](LICENSE)
 
 **AirCloud VPN** — открытый программный комплекс для организации и продажи VPN-сервиса на базе протоколов **Xray-core (VLESS / Reality)**. 
 
@@ -76,7 +75,7 @@ graph TD
 
     Repo["📦 aircloud_vpn (Корень репозитория)"]:::root
 
-    Repo --> RootFiles["📄 .env.example (Общий шаблон)<br/>🛡️ .gitignore (Фильтрация секретов)<br/>📖 README.md (Документация)<br/>⚖️ LICENSE (MIT)"]:::dir
+    Repo --> RootFiles["📄 .env.example (Общий шаблон)<br/>🛡️ .gitignore (Фильтрация секретов)<br/>📖 README.md (Документация)"]:::dir
     Repo --> Deploy["📂 deploy/"]:::dir
 
     subgraph NLNode ["🇳🇱 deploy/nl-server (Главный узел: Exit Node + Bot + Web)"]
@@ -320,6 +319,6 @@ docker compose up -d --build
 
 ---
 
-## 📄 Лицензия
+## 📄 Авторские права / Copyright
 
-Проект лицензирован на условиях [MIT License](LICENSE). Разрешено коммерческое и некоммерческое использование, изменение и распространение.
+Copyright (c) 2026 AirCloud ([airwar31](https://github.com/airwar31)). Все права защищены / All rights reserved.
